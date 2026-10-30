@@ -8,7 +8,7 @@ exports.describe = 'Logs out and revokes the stored token';
 exports.builder = yargs => {
   yargs.option('endpoint', {
     alias: 'e',
-    describe: 'API endpoint (or set FORMSPREE_API_URL)'
+    describe: 'API endpoint'
   });
 };
 

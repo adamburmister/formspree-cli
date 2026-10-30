@@ -43,11 +43,13 @@ exports.describe = 'Logs in to Formspree in your browser';
 exports.builder = yargs => {
   yargs.option('endpoint', {
     alias: 'e',
-    describe: 'API endpoint (or set FORMSPREE_API_URL)'
+    describe: 'API endpoint'
   });
 
+  // For development against other servers; hidden from --help.
   yargs.option('client-id', {
-    describe: 'OAuth client id (or set FORMSPREE_CLIENT_ID)'
+    describe: 'OAuth client id',
+    hidden: true
   });
 
   yargs.option('scope', {

@@ -20,27 +20,11 @@ formspree login
 
 The CLI prints a link and a code. Open the link, check the code matches, and
 approve. The CLI stores the token in `~/.config/formspree/credentials.json`
-(or `$XDG_CONFIG_HOME/formspree`, or `$FORMSPREE_CONFIG_DIR`) and refreshes it
-in the background. If the login is revoked or expires, run `formspree login`
-again.
+(or under `$XDG_CONFIG_HOME/formspree`) and refreshes it in the background. If
+the login is revoked or expires, run `formspree login` again.
 
 - `formspree whoami` lists the accounts you're logged in to.
 - `formspree logout` revokes the login and removes the stored token.
-
-To use another Formspree server, set `FORMSPREE_API_URL` (or pass
-`--endpoint`/`-e`, which wins over it). Logging in there also needs its
-"Formspree CLI" OAuth client id, from `--client-id` or the
-`FORMSPREE_CLIENT_ID` env variable. Both can go in a `.env` file:
-
-```bash
-export FORMSPREE_API_URL=https://<review-app>.formspree.io
-export FORMSPREE_CLIENT_ID=<client-id>
-formspree login
-formspree whoami
-```
-
-Logins are stored per server, so switching `FORMSPREE_API_URL` switches which
-one is used.
 
 ### API keys, for CI and scripts
 
