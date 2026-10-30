@@ -12,16 +12,26 @@ exports.builder = yargs => {
     alias: 'e',
     describe: 'API endpoint'
   });
+
+  yargs.option('key', {
+    alias: 'k',
+    describe: 'API key to use instead of your login (or set FORMSPREE_API_KEY)'
+  });
 };
 
 exports.handler = async args => {
   const endpoint = oauth.normalizeEndpoint(args.endpoint);
+  const key = api.apiKey(args.key);
 
   try {
-    const response = await api.request(endpoint, {
-      method: 'get',
-      path: '/api/v1/accounts'
-    });
+    const response = await api.request(
+      endpoint,
+      {
+        method: 'get',
+        path: '/api/v1/accounts'
+      },
+      { key }
+    );
 
     if (response.status !== 200) {
       log.error(`Request failed ${chalk.gray(`(${response.status})`)}`);
@@ -29,7 +39,9 @@ exports.handler = async args => {
       return;
     }
 
-    log.success(`Logged in to ${endpoint}`);
+    log.success(
+      key ? `Using an API key for ${endpoint}` : `Logged in to ${endpoint}`
+    );
     console.log('');
     response.data.accounts.forEach(account => {
       console.log(
@@ -42,6 +54,13 @@ exports.handler = async args => {
   } catch (error) {
     if (error instanceof api.LoginRequired) {
       messages.loginRequired(endpoint, error.message);
+    } else if (error instanceof api.InvalidKey) {
+      log.error(error.message);
+      log.meta(
+        `Check the ${log.variable('--key')} flag or the ${log.variable(
+          'FORMSPREE_API_KEY'
+        )} env variable.`
+      );
     } else {
       log.error('Request failed unexpectedly');
     }

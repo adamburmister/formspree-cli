@@ -1,4 +1,5 @@
 const axios = require('axios');
+const env = require('process').env;
 const version = require('../package.json').version;
 const credentials = require('./credentials');
 const oauth = require('./oauth');
@@ -17,14 +18,33 @@ class LoginRequired extends Error {
 }
 
 /**
- * Sends a v1 API request with the entry's access token.
+ * Thrown when the server refuses an API key. Logging in won't help:
+ * the key itself has to be fixed or replaced.
  */
-const send = (endpoint, entry, { method, path }) => {
+class InvalidKey extends Error {
+  constructor(reason) {
+    super(reason || 'The API key was not accepted');
+  }
+}
+
+/**
+ * The API key to use instead of the stored login: the --key flag, then
+ * $FORMSPREE_API_KEY. Returns null when neither is set.
+ *
+ * @param {string} [flag]
+ */
+const apiKey = flag => flag || env.FORMSPREE_API_KEY || null;
+
+/**
+ * Sends a v1 API request with a bearer credential: an OAuth access token
+ * or an account key, which the server accepts the same way.
+ */
+const send = (endpoint, bearer, { method, path }) => {
   return axios.request({
     method,
     url: `${endpoint}${path}`,
     headers: {
-      Authorization: `Bearer ${entry.access_token}`,
+      Authorization: `Bearer ${bearer}`,
       'User-Agent': `@formspree/cli@${version}`
     },
     timeout: oauth.REQUEST_TIMEOUT,
@@ -81,27 +101,37 @@ const refresh = (endpoint, stale) => {
 };
 
 /**
- * Calls the v1 API with the stored token for an endpoint.
+ * Calls the v1 API with an API key if one is given, else with the stored
+ * token for the endpoint. Keys are sent as they are: no refresh, no lock.
  *
  * @param {string} endpoint
  * @param {{ method: string, path: string }} req
+ * @param {{ key?: string }} [auth]
  */
-const request = async (endpoint, req) => {
+const request = async (endpoint, req, { key } = {}) => {
+  if (key) {
+    const response = await send(endpoint, key, req);
+    if (response.status === 401) {
+      throw new InvalidKey(response.data && response.data.detail);
+    }
+    return response;
+  }
+
   let entry = credentials.read(endpoint);
   if (!entry) throw new LoginRequired();
   if (expired(entry)) entry = await refresh(endpoint, entry);
 
-  let response = await send(endpoint, entry, req);
+  let response = await send(endpoint, entry.access_token, req);
   if (response.status !== 401) return response;
 
   // The token may have been rotated or revoked since it was stored.
   // Refresh once; a second 401 means the grant no longer works.
   entry = await refresh(endpoint, entry);
-  response = await send(endpoint, entry, req);
+  response = await send(endpoint, entry.access_token, req);
   if (response.status === 401) {
     throw new LoginRequired('Your login was not accepted');
   }
   return response;
 };
 
-module.exports = { request, LoginRequired };
+module.exports = { request, apiKey, LoginRequired, InvalidKey };

@@ -4,6 +4,7 @@
 
 - Add `login` (OAuth device flow), `logout` and `whoami` commands.
 - Accept a `FORMSPREE_CLIENT_ID` env variable or `--client-id` flag for logging in.
+- Accept an account API key with `--key` or `FORMSPREE_API_KEY` in place of a login, for CI.
 
 ## 0.9.0
 

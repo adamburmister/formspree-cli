@@ -266,3 +266,64 @@ it('names a personal account that has no name', async () => {
   expect(output(console.log)).toContain('Personal account (personal, abc123)');
   expect(output(console.log)).not.toContain('null');
 });
+
+describe('with an API key', () => {
+  afterEach(() => {
+    delete process.env.FORMSPREE_API_KEY;
+  });
+
+  it('uses FORMSPREE_API_KEY instead of the stored login', async () => {
+    store({ expires_at: Date.now() - 1000 });
+    const before = stored();
+    process.env.FORMSPREE_API_KEY = 'fsk_from_env';
+    serveApi(['fsk_from_env']);
+
+    await cmd.handler({ endpoint: ENDPOINT });
+
+    expect(bearers()).toEqual(['Bearer fsk_from_env']);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(stored()).toEqual(before);
+    expect(output(console.log)).toContain('API key');
+    expect(output(console.log)).toContain('Personal');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('prefers --key over FORMSPREE_API_KEY', async () => {
+    process.env.FORMSPREE_API_KEY = 'fsk_from_env';
+    serveApi(['fsk_from_flag']);
+
+    await cmd.handler({ endpoint: ENDPOINT, key: 'fsk_from_flag' });
+
+    expect(bearers()).toEqual(['Bearer fsk_from_flag']);
+    expect(output(console.log)).toContain('Personal');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('works without a stored login', async () => {
+    serveApi(['fsk_from_flag']);
+
+    await cmd.handler({ endpoint: ENDPOINT, key: 'fsk_from_flag' });
+
+    expect(bearers()).toEqual(['Bearer fsk_from_flag']);
+    expect(fs.existsSync(credentialsFile)).toBe(false);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('reports a rejected key without suggesting a login', async () => {
+    store({});
+    const before = stored();
+    axios.request.mockImplementation(() =>
+      response(401, { status: 401, detail: 'This API key was revoked.' })
+    );
+
+    await cmd.handler({ endpoint: ENDPOINT, key: 'fsk_revoked' });
+
+    expect(bearers()).toEqual(['Bearer fsk_revoked']);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain('This API key was revoked.');
+    expect(output(console.error)).not.toContain('formspree login');
+    expect(output(console.log)).toContain('FORMSPREE_API_KEY');
+    expect(stored()).toEqual(before);
+    expect(process.exitCode).toBe(1);
+  });
+});

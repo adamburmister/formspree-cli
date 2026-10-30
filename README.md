@@ -35,7 +35,20 @@ there, pass its "Formspree CLI" OAuth client id with `--client-id` or the
 FORMSPREE_CLIENT_ID=<client-id> formspree login -e https://<review-app>.formspree.io
 ```
 
-`formspree deploy` doesn't use the login: it still takes a deploy key.
+### API keys, for CI and scripts
+
+Where nobody can approve a login in a browser, use an account API key
+(`fsk_...`) instead. Pass it with `--key` (`-k`) or set `FORMSPREE_API_KEY`;
+either one takes the place of the stored login:
+
+```bash
+FORMSPREE_API_KEY=<your-api-key> formspree whoami
+```
+
+A key is used as it is, with no refresh. If the server rejects it, fix or
+replace the key: logging in won't help.
+
+`formspree deploy` uses neither: it still takes a deploy key.
 
 ## Releasing
 
