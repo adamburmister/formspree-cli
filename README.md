@@ -27,13 +27,20 @@ again.
 - `formspree whoami` lists the accounts you're logged in to.
 - `formspree logout` revokes the login and removes the stored token.
 
-Each takes `--endpoint` (`-e`) to use another Formspree server. To log in
-there, pass its "Formspree CLI" OAuth client id with `--client-id` or the
-`FORMSPREE_CLIENT_ID` env variable:
+To use another Formspree server, set `FORMSPREE_API_URL` (or pass
+`--endpoint`/`-e`, which wins over it). Logging in there also needs its
+"Formspree CLI" OAuth client id, from `--client-id` or the
+`FORMSPREE_CLIENT_ID` env variable. Both can go in a `.env` file:
 
 ```bash
-FORMSPREE_CLIENT_ID=<client-id> formspree login -e https://<review-app>.formspree.io
+export FORMSPREE_API_URL=https://<review-app>.formspree.io
+export FORMSPREE_CLIENT_ID=<client-id>
+formspree login
+formspree whoami
 ```
+
+Logins are stored per server, so switching `FORMSPREE_API_URL` switches which
+one is used.
 
 ### API keys, for CI and scripts
 
@@ -46,7 +53,9 @@ FORMSPREE_API_KEY=<your-api-key> formspree whoami
 ```
 
 A key is used as it is, with no refresh. If the server rejects it, fix or
-replace the key: logging in won't help.
+replace the key: logging in won't help. A key needs no login, so
+`formspree login` doesn't take one, and while `FORMSPREE_API_KEY` is set it's
+used instead of any login.
 
 `formspree deploy` uses neither: it still takes a deploy key.
 

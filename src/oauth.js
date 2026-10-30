@@ -29,12 +29,17 @@ class OAuthError extends Error {
 }
 
 /**
- * Normalizes an `--endpoint` value so credentials are keyed consistently.
+ * Picks the endpoint: the --endpoint flag, then $FORMSPREE_API_URL, then
+ * formspree.io. Trailing slashes are dropped so credentials are keyed
+ * consistently.
  *
- * @param {string} endpoint
+ * @param {string} [endpoint]
  */
 const normalizeEndpoint = endpoint => {
-  return (endpoint || DEFAULT_ENDPOINT).replace(/\/+$/, '');
+  return (endpoint || env.FORMSPREE_API_URL || DEFAULT_ENDPOINT).replace(
+    /\/+$/,
+    ''
+  );
 };
 
 /**

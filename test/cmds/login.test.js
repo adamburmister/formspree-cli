@@ -213,6 +213,7 @@ describe('choosing the client id', () => {
     expect(axios.post).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('No OAuth client id');
     expect(output(console.error)).toContain('FORMSPREE_CLIENT_ID');
+    expect(output(console.error)).not.toMatch(/ -e /);
     expect(process.exitCode).toBe(1);
   });
 });
@@ -278,4 +279,79 @@ it('revokes the previous login when logging in again', async () => {
   ]);
   const stored = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
   expect(stored['https://formspree.io'].access_token).toBe('fso_access_1');
+});
+
+describe('choosing the endpoint', () => {
+  afterEach(() => {
+    delete process.env.FORMSPREE_API_URL;
+  });
+
+  it('uses FORMSPREE_API_URL when there is no --endpoint', async () => {
+    process.env.FORMSPREE_API_URL = 'https://review.formspree.io/';
+    serve({ polls: [() => tokenResponse()] });
+
+    await cmd.handler({ clientId: 'cli-client' });
+
+    const device = parseCall(axios.post.mock.calls[0]);
+    expect(device.url).toBe('https://review.formspree.io/oauth/device');
+    expect(tokenPolls()[0].url).toBe(
+      'https://review.formspree.io/oauth/tokens'
+    );
+
+    const stored = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
+    expect(Object.keys(stored)).toEqual(['https://review.formspree.io']);
+  });
+
+  it('prefers --endpoint over FORMSPREE_API_URL', async () => {
+    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
+    serve({ polls: [() => tokenResponse()] });
+
+    await cmd.handler({
+      endpoint: 'https://other.formspree.io',
+      clientId: 'cli-client'
+    });
+
+    const device = parseCall(axios.post.mock.calls[0]);
+    expect(device.url).toBe('https://other.formspree.io/oauth/device');
+  });
+});
+
+describe('API keys', () => {
+  afterEach(() => {
+    delete process.env.FORMSPREE_API_KEY;
+  });
+
+  it('refuses --key, since keys need no login', async () => {
+    serve({ polls: [] });
+
+    await cmd.handler({ ...args, key: 'fsk_example' });
+
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain("API keys don't need a login");
+    expect(output(console.log)).toContain('FORMSPREE_API_KEY');
+    expect(process.exitCode).toBe(1);
+    expect(fs.existsSync(credentialsFile)).toBe(false);
+  });
+
+  it('warns that FORMSPREE_API_KEY will be used instead of the login', async () => {
+    process.env.FORMSPREE_API_KEY = 'fsk_example';
+    serve({ polls: [() => tokenResponse()] });
+
+    await cmd.handler(args);
+
+    expect(output(console.log)).toContain('Logged in');
+    expect(output(console.log)).toContain(
+      'FORMSPREE_API_KEY is set, so commands use that key instead of this login'
+    );
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('does not warn when FORMSPREE_API_KEY is not set', async () => {
+    serve({ polls: [() => tokenResponse()] });
+
+    await cmd.handler(args);
+
+    expect(output(console.log)).toContain('Logged in');
+    expect(output(console.log)).not.toContain('FORMSPREE_API_KEY');
+  });
 });

@@ -1,6 +1,6 @@
 const chalk = require('chalk');
 const log = require('./log');
-const { DEFAULT_ENDPOINT } = require('./oauth');
+const { normalizeEndpoint } = require('./oauth');
 const { stripIndent } = require('common-tags');
 
 const authRequired = () => {
@@ -35,6 +35,22 @@ const authRequired = () => {
   console.error('');
 };
 
+/**
+ * The command that logs in to `endpoint` again: plain `formspree login`
+ * when that already reaches it (the default, or $FORMSPREE_API_URL), else
+ * with FORMSPREE_API_URL set for that one run.
+ *
+ * @param {string} endpoint
+ * @param {string} [vars] other env assignments to show before the command
+ */
+const loginCommand = (endpoint, vars = '') => {
+  const url =
+    endpoint === normalizeEndpoint()
+      ? ''
+      : `FORMSPREE_API_URL=${chalk.yellow(endpoint)} `;
+  return `${chalk.gray('$')} ${url}${vars}formspree login`;
+};
+
 const clientIdRequired = endpoint => {
   log.error(`No OAuth client id for ${endpoint}`);
   console.error('');
@@ -49,21 +65,16 @@ const clientIdRequired = endpoint => {
 
     ${chalk.yellow.bold('-- Example ------------------------------------------------')}
 
-      ${chalk.gray('$')} FORMSPREE_CLIENT_ID=${chalk.yellow('<client-id>')} formspree login ${chalk.cyan('-e')} ${chalk.yellow('<endpoint>')}
+      ${loginCommand(endpoint, `FORMSPREE_CLIENT_ID=${chalk.yellow('<client-id>')} `)}
   `);
 
   console.error('');
 };
 
 const loginRequired = (endpoint, reason) => {
-  const flag =
-    endpoint === DEFAULT_ENDPOINT
-      ? ''
-      : ` ${chalk.cyan('-e')} ${chalk.yellow(endpoint)}`;
-
   log.error(reason);
   console.error('');
-  console.error(`  Run ${chalk.gray('$')} formspree login${flag}`);
+  console.error(`  Run ${loginCommand(endpoint)}`);
   console.error('');
 };
 

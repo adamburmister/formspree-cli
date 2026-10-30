@@ -97,3 +97,20 @@ it('treats an already revoked login as logged out', async () => {
   expect(output(console.log)).toContain('Logged out');
   expect(process.exitCode).toBeUndefined();
 });
+
+it('uses FORMSPREE_API_URL when there is no --endpoint', async () => {
+  axios.post.mockImplementation(() => response(200, ''));
+  process.env.FORMSPREE_API_URL = OTHER;
+
+  try {
+    await cmd.handler({});
+  } finally {
+    delete process.env.FORMSPREE_API_URL;
+  }
+
+  const [revoke] = axios.post.mock.calls.map(parseCall);
+  expect(revoke.url).toBe('https://review.formspree.io/oauth/revoke');
+  expect(revoke.params.token).toBe('fso_refresh_9');
+  expect(stored()[OTHER]).toBeUndefined();
+  expect(stored()[ENDPOINT]).toEqual(entry('0'));
+});

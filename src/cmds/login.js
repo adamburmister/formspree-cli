@@ -4,6 +4,7 @@ const log = require('../log');
 const messages = require('../messages');
 const oauth = require('../oauth');
 const credentials = require('../credentials');
+const api = require('../api');
 
 const printError = (error, { clientId }) => {
   switch (error.code) {
@@ -42,7 +43,7 @@ exports.describe = 'Logs in to Formspree in your browser';
 exports.builder = yargs => {
   yargs.option('endpoint', {
     alias: 'e',
-    describe: 'API endpoint'
+    describe: 'API endpoint (or set FORMSPREE_API_URL)'
   });
 
   yargs.option('client-id', {
@@ -53,6 +54,12 @@ exports.builder = yargs => {
     describe: 'Space-separated scopes to request',
     default: oauth.DEFAULT_SCOPE
   });
+
+  // Declared only so `login --key` (or `-k`) is caught, not silently ignored.
+  yargs.option('key', {
+    alias: 'k',
+    hidden: true
+  });
 };
 
 exports.handler = async args => {
@@ -62,6 +69,19 @@ exports.handler = async args => {
   const spinner = ora(
     chalk.gray('Waiting for you to approve in the browser...')
   );
+
+  if (args.key) {
+    log.error("API keys don't need a login");
+    log.meta(
+      `Pass ${log.variable(
+        '--key'
+      )} to the command itself, or set the ${log.variable(
+        'FORMSPREE_API_KEY'
+      )} env variable.`
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   if (!clientId) {
     messages.clientIdRequired(endpoint);
@@ -105,6 +125,15 @@ exports.handler = async args => {
     });
 
     log.success('Logged in');
+
+    // A key in the environment beats any login, so this one goes unused.
+    if (api.apiKey()) {
+      log.meta(
+        `${log.variable(
+          'FORMSPREE_API_KEY'
+        )} is set, so commands use that key instead of this login. Unset it to use the login.`
+      );
+    }
   } catch (error) {
     spinner.stop();
     printError(error, { clientId });

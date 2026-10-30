@@ -327,3 +327,65 @@ describe('with an API key', () => {
     expect(process.exitCode).toBe(1);
   });
 });
+
+it('uses FORMSPREE_API_URL when there is no --endpoint', async () => {
+  fs.writeFileSync(
+    credentialsFile,
+    JSON.stringify({
+      'https://review.formspree.io': {
+        client_id: 'cli-client',
+        access_token: 'fso_access_0',
+        refresh_token: 'fso_refresh_0',
+        expires_at: Date.now() + HOUR,
+        scope: 'projects:write'
+      }
+    })
+  );
+  process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
+  serveApi(['fso_access_0']);
+
+  try {
+    await cmd.handler({});
+  } finally {
+    delete process.env.FORMSPREE_API_URL;
+  }
+
+  const [config] = axios.request.mock.calls[0];
+  expect(config.url).toBe('https://review.formspree.io/api/v1/accounts');
+  expect(output(console.log)).toContain('https://review.formspree.io');
+  expect(process.exitCode).toBeUndefined();
+});
+
+describe('the login hint', () => {
+  const hint = () =>
+    output(console.error)
+      .split('\n')
+      .find(line => line.includes('formspree login'))
+      .trim();
+
+  afterEach(() => {
+    delete process.env.FORMSPREE_API_URL;
+  });
+
+  it('is plain formspree login on the default endpoint', async () => {
+    await cmd.handler({});
+
+    expect(hint()).toBe('Run $ formspree login');
+  });
+
+  it('is plain formspree login when FORMSPREE_API_URL picked the endpoint', async () => {
+    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
+
+    await cmd.handler({});
+
+    expect(hint()).toBe('Run $ formspree login');
+  });
+
+  it('sets FORMSPREE_API_URL, not -e, after a one-off --endpoint', async () => {
+    await cmd.handler({ endpoint: 'https://review.formspree.io' });
+
+    expect(hint()).toBe(
+      'Run $ FORMSPREE_API_URL=https://review.formspree.io formspree login'
+    );
+  });
+});

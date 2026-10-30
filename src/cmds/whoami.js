@@ -10,7 +10,7 @@ exports.describe = 'Shows the accounts you are logged in to';
 exports.builder = yargs => {
   yargs.option('endpoint', {
     alias: 'e',
-    describe: 'API endpoint'
+    describe: 'API endpoint (or set FORMSPREE_API_URL)'
   });
 
   yargs.option('key', {
