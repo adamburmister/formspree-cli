@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add `login` (OAuth device flow), `logout` and `whoami` commands.
+- Accept a `FORMSPREE_CLIENT_ID` env variable or `--client-id` flag for logging in.
+
 ## 0.9.0
 
 - Fix option parsing to support dashes (#6)

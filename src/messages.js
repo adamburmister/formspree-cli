@@ -1,5 +1,6 @@
 const chalk = require('chalk');
 const log = require('./log');
+const { DEFAULT_ENDPOINT } = require('./oauth');
 const { stripIndent } = require('common-tags');
 
 const authRequired = () => {
@@ -34,4 +35,36 @@ const authRequired = () => {
   console.error('');
 };
 
-module.exports = { authRequired };
+const clientIdRequired = endpoint => {
+  log.error(`No OAuth client id for ${endpoint}`);
+  console.error('');
+
+  // prettier-ignore
+  console.error(stripIndent`
+    Logging in needs the id of the "Formspree CLI" OAuth client
+    on that endpoint. There are couple ways to provide it:
+
+    - Use the ${log.variable('--client-id')} flag, or
+    - Set the ${log.variable('FORMSPREE_CLIENT_ID')} env variable
+
+    ${chalk.yellow.bold('-- Example ------------------------------------------------')}
+
+      ${chalk.gray('$')} FORMSPREE_CLIENT_ID=${chalk.yellow('<client-id>')} formspree login ${chalk.cyan('-e')} ${chalk.yellow('<endpoint>')}
+  `);
+
+  console.error('');
+};
+
+const loginRequired = (endpoint, reason) => {
+  const flag =
+    endpoint === DEFAULT_ENDPOINT
+      ? ''
+      : ` ${chalk.cyan('-e')} ${chalk.yellow(endpoint)}`;
+
+  log.error(reason);
+  console.error('');
+  console.error(`  Run ${chalk.gray('$')} formspree login${flag}`);
+  console.error('');
+};
+
+module.exports = { authRequired, clientIdRequired, loginRequired };

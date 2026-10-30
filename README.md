@@ -10,6 +10,33 @@ Run the following to install on your machine:
 npm i -g @formspree/cli
 ```
 
+## Logging in
+
+Run the following to log in through your browser:
+
+```bash
+formspree login
+```
+
+The CLI prints a link and a code. Open the link, check the code matches, and
+approve. The CLI stores the token in `~/.config/formspree/credentials.json`
+(or `$XDG_CONFIG_HOME/formspree`, or `$FORMSPREE_CONFIG_DIR`) and refreshes it
+in the background. If the login is revoked or expires, run `formspree login`
+again.
+
+- `formspree whoami` lists the accounts you're logged in to.
+- `formspree logout` revokes the login and removes the stored token.
+
+Each takes `--endpoint` (`-e`) to use another Formspree server. To log in
+there, pass its "Formspree CLI" OAuth client id with `--client-id` or the
+`FORMSPREE_CLIENT_ID` env variable:
+
+```bash
+FORMSPREE_CLIENT_ID=<client-id> formspree login -e https://<review-app>.formspree.io
+```
+
+`formspree deploy` doesn't use the login: it still takes a deploy key.
+
 ## Releasing
 
 Run the following to publish a new version:
