@@ -63,7 +63,7 @@ const preamble = () => {
 const banner = () => {
   const bar = chalk.bold.red('█'.repeat(10));
   const edge = chalk.bold.red('▀'.repeat(10));
-  const wordmark = `${chalk.bold.white('FormSpree')}${chalk.white('.io')}`;
+  const wordmark = `${chalk.bold.white('Formspree')}${chalk.white('.io')}`;
 
   return [
     bar,
