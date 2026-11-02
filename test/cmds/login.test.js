@@ -179,28 +179,41 @@ it('asks to wait when starting logins too often', async () => {
   expect(process.exitCode).toBe(1);
 });
 
-it('explains an unknown client id', async () => {
+// FORMSPREE_CLIENT_ID is for development only, so nothing a user sees
+// should name it or show the id it holds.
+const everything = () => `${output(console.log)}\n${output(console.error)}`;
+
+const expectNoClientIdVariable = () => {
+  expect(everything()).not.toContain('FORMSPREE_CLIENT_ID');
+  expect(everything()).not.toContain('cli-client');
+};
+
+it('asks for an update when the server does not know the CLI', async () => {
   serve({ device: oauthError('invalid_client', 401), polls: [] });
 
   await cmd.handler(args);
 
-  expect(output(console.error)).toContain('cli-client');
-  expect(output(console.log)).toContain('FORMSPREE_CLIENT_ID');
-  expect(output(console.log)).not.toContain('--client-id');
+  expect(output(console.error)).toContain(
+    "Formspree didn't recognize this version of the CLI"
+  );
+  expect(output(console.log)).toContain('Update to the latest version');
+  expectNoClientIdVariable();
+  expect(everything()).not.toMatch(/client.id/i);
   expect(process.exitCode).toBe(1);
 });
 
 describe('choosing the client id', () => {
-  it('asks for FORMSPREE_CLIENT_ID when the endpoint has none', async () => {
+  it('says the client id is not set when the endpoint has none', async () => {
     delete process.env.FORMSPREE_CLIENT_ID;
     serve({ polls: [] });
 
     await cmd.handler({});
 
     expect(axios.post).not.toHaveBeenCalled();
-    expect(output(console.error)).toContain('No OAuth client id');
-    expect(output(console.error)).toContain('FORMSPREE_CLIENT_ID');
-    expect(output(console.error)).not.toContain('--client-id');
+    expect(output(console.error)).toContain(
+      'Client ID is not set. Cannot log in to https://formspree.io'
+    );
+    expectNoClientIdVariable();
     expect(process.exitCode).toBe(1);
   });
 
@@ -211,7 +224,7 @@ describe('choosing the client id', () => {
     await cmd.handler({ clientId: 'flag-client' });
 
     expect(axios.post).not.toHaveBeenCalled();
-    expect(output(console.error)).toContain('No OAuth client id');
+    expect(output(console.error)).toContain('Client ID is not set');
     expect(process.exitCode).toBe(1);
   });
 });

@@ -1,4 +1,3 @@
-// The banner's lines as drawn in the brand's ANSI file (f.ans, CP437).
 const BANNER_LINES = [
   '██████████',
   '▀▀▀▀▀▀▀▀▀▀',

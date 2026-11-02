@@ -6,7 +6,7 @@ const oauth = require('../oauth');
 const credentials = require('../credentials');
 const api = require('../api');
 
-const printError = (error, { clientId }) => {
+const printError = error => {
   switch (error.code) {
     case 'expired_token':
       log.error('The login code expired');
@@ -22,11 +22,11 @@ const printError = (error, { clientId }) => {
       log.meta('Wait a minute, then try again.');
       return;
 
+    // The CLI's client id is unknown to the server: an old CLI after the
+    // client was replaced, or a review app redeployed under development.
     case 'invalid_client':
-      log.error(`OAuth client ${log.variable(clientId)} was not recognized`);
-      log.meta(
-        `Check the ${log.variable('FORMSPREE_CLIENT_ID')} env variable.`
-      );
+      log.error("Formspree didn't recognize this version of the CLI");
+      log.meta('Update to the latest version, then try again.');
       return;
 
     default:
@@ -72,8 +72,12 @@ exports.handler = async args => {
     return;
   }
 
+  // No client id: production's isn't set yet, or a development endpoint
+  // without FORMSPREE_CLIENT_ID.
   if (!clientId) {
-    messages.clientIdRequired(endpoint);
+    log.error(
+      `Client ID is not set. Cannot log in to ${log.variable(endpoint)}`
+    );
     process.exitCode = 1;
     return;
   }
@@ -127,7 +131,7 @@ exports.handler = async args => {
     }
   } catch (error) {
     spinner.stop();
-    printError(error, { clientId });
+    printError(error);
     process.exitCode = 1;
   }
 };

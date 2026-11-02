@@ -47,21 +47,6 @@ const usingEndpoint = endpoint => {
   log.meta(`Using ${log.variable(endpoint)} (FORMSPREE_API_URL)`);
 };
 
-const clientIdRequired = endpoint => {
-  log.error(`No OAuth client id for ${endpoint}`);
-  console.error('');
-
-  // prettier-ignore
-  console.error(stripIndent`
-    Logging in needs the id of the "Formspree CLI" OAuth client
-    on that endpoint. Set it in the ${log.variable('FORMSPREE_CLIENT_ID')} env variable:
-
-      ${chalk.gray('$')} FORMSPREE_CLIENT_ID=${chalk.yellow('<client-id>')} formspree login
-  `);
-
-  console.error('');
-};
-
 const loginRequired = reason => {
   log.error(reason);
   console.error('');
@@ -71,7 +56,6 @@ const loginRequired = reason => {
 
 module.exports = {
   authRequired,
-  clientIdRequired,
   loginRequired,
   usingEndpoint
 };
