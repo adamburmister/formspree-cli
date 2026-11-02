@@ -24,6 +24,9 @@ afterEach(() => {
   console.log.mockRestore();
   console.error.mockRestore();
   deploy.request.mockReset();
+  // The handler sets process.exitCode = 1 on errors; left set, it becomes
+  // jest's own exit code and fails the run.
+  process.exitCode = undefined;
 });
 
 it('sends a deploy request with the right params', async () => {
