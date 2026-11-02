@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add `login` (OAuth device flow), `logout` and `whoami` commands.
+- Require Node 10.12 or later.
 - Show the Formspree banner at the top of `formspree --help` and `formspree login`.
 - Accept an account API key with `--key` or `FORMSPREE_API_KEY` in place of a login, for CI.
 

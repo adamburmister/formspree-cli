@@ -1,4 +1,6 @@
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const axios = require('axios');
 const {
   useTempConfigDir,
@@ -368,4 +370,20 @@ describe('API keys', () => {
     expect(output(console.log)).toContain('Logged in');
     expect(output(console.log)).not.toContain('FORMSPREE_API_KEY');
   });
+});
+
+it('creates missing config directories, private to the user', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'formspree-cli-'));
+  const dir = path.join(root, 'nested', 'formspree');
+  process.env.FORMSPREE_CONFIG_DIR = dir;
+  serve({ polls: [() => tokenResponse()] });
+
+  await cmd.handler(args);
+
+  const stored = JSON.parse(
+    fs.readFileSync(path.join(dir, 'credentials.json'), 'utf8')
+  );
+  expect(stored['https://formspree.io'].access_token).toBe('fso_access_1');
+  expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+  expect(fs.statSync(path.join(root, 'nested')).mode & 0o777).toBe(0o700);
 });

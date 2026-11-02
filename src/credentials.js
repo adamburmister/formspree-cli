@@ -24,11 +24,7 @@ const credentialsFile = () => path.join(configDir(), 'credentials.json');
  *
  * @param {string} dir
  */
-const mkdirp = dir => {
-  if (fs.existsSync(dir)) return;
-  mkdirp(path.dirname(dir));
-  fs.mkdirSync(dir, { mode: 0o700 });
-};
+const mkdirp = dir => fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
 /**
  * Reads every stored entry, keyed by endpoint.
