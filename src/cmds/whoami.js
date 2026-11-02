@@ -8,11 +8,6 @@ exports.command = 'whoami';
 exports.describe = 'Shows the accounts you are logged in to';
 
 exports.builder = yargs => {
-  yargs.option('endpoint', {
-    alias: 'e',
-    describe: 'API endpoint'
-  });
-
   yargs.option('key', {
     alias: 'k',
     describe: 'API key to use instead of your login (or set FORMSPREE_API_KEY)'
@@ -20,8 +15,10 @@ exports.builder = yargs => {
 };
 
 exports.handler = async args => {
-  const endpoint = oauth.normalizeEndpoint(args.endpoint);
+  const endpoint = oauth.endpoint();
   const key = api.apiKey(args.key);
+
+  messages.usingEndpoint(endpoint);
 
   try {
     const response = await api.request(
@@ -53,7 +50,7 @@ exports.handler = async args => {
     console.log('');
   } catch (error) {
     if (error instanceof api.LoginRequired) {
-      messages.loginRequired(endpoint, error.message);
+      messages.loginRequired(error.message);
     } else if (error instanceof api.InvalidKey) {
       log.error(error.message);
       log.meta(

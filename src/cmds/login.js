@@ -25,9 +25,7 @@ const printError = (error, { clientId }) => {
     case 'invalid_client':
       log.error(`OAuth client ${log.variable(clientId)} was not recognized`);
       log.meta(
-        `Check the ${log.variable(
-          'FORMSPREE_CLIENT_ID'
-        )} env variable or the ${log.variable('--client-id')} flag.`
+        `Check the ${log.variable('FORMSPREE_CLIENT_ID')} env variable.`
       );
       return;
 
@@ -41,17 +39,6 @@ exports.command = 'login';
 exports.describe = 'Logs in to Formspree in your browser';
 
 exports.builder = yargs => {
-  yargs.option('endpoint', {
-    alias: 'e',
-    describe: 'API endpoint'
-  });
-
-  // For development against other servers; hidden from --help.
-  yargs.option('client-id', {
-    describe: 'OAuth client id',
-    hidden: true
-  });
-
   yargs.option('scope', {
     describe: 'Space-separated scopes to request',
     default: oauth.DEFAULT_SCOPE
@@ -65,8 +52,8 @@ exports.builder = yargs => {
 };
 
 exports.handler = async args => {
-  const endpoint = oauth.normalizeEndpoint(args.endpoint);
-  const clientId = oauth.clientIdFor(endpoint, args.clientId);
+  const endpoint = oauth.endpoint();
+  const clientId = oauth.clientIdFor(endpoint);
   const scope = args.scope || oauth.DEFAULT_SCOPE;
   const spinner = ora(
     chalk.gray('Waiting for you to approve in the browser...')
@@ -90,6 +77,8 @@ exports.handler = async args => {
     process.exitCode = 1;
     return;
   }
+
+  messages.usingEndpoint(endpoint);
 
   try {
     const device = await oauth.requestDeviceCode({ endpoint, clientId, scope });

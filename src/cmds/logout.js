@@ -1,21 +1,19 @@
 const log = require('../log');
+const messages = require('../messages');
 const oauth = require('../oauth');
 const credentials = require('../credentials');
 
 exports.command = 'logout';
 exports.describe = 'Logs out and revokes the stored token';
 
-exports.builder = yargs => {
-  yargs.option('endpoint', {
-    alias: 'e',
-    describe: 'API endpoint'
-  });
-};
+exports.builder = {};
 
-exports.handler = async args => {
-  const endpoint = oauth.normalizeEndpoint(args.endpoint);
+exports.handler = async _args => {
+  const endpoint = oauth.endpoint();
   let found = false;
   let revokeFailed = false;
+
+  messages.usingEndpoint(endpoint);
 
   try {
     // Revoke under the lock, so a concurrent refresh can't rotate the

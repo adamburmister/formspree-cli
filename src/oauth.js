@@ -16,7 +16,7 @@ const MAX_NETWORK_FAILURES = 3;
 
 // The public "Formspree CLI" OAuth client's id on each endpoint.
 // TODO: production has no "Formspree CLI" client yet. Fill in its id once
-// it exists; until then, set FORMSPREE_CLIENT_ID or pass --client-id.
+// it exists; until then, set FORMSPREE_CLIENT_ID.
 const CLIENT_IDS = {
   'https://formspree.io': null
 };
@@ -29,29 +29,22 @@ class OAuthError extends Error {
 }
 
 /**
- * Picks the endpoint: the --endpoint flag, then $FORMSPREE_API_URL, then
- * formspree.io. Trailing slashes are dropped so credentials are keyed
- * consistently.
- *
- * @param {string} [endpoint]
+ * The server to talk to: $FORMSPREE_API_URL (for development against a
+ * review app), else formspree.io. Trailing slashes are dropped so
+ * credentials are keyed consistently.
  */
-const normalizeEndpoint = endpoint => {
-  return (endpoint || env.FORMSPREE_API_URL || DEFAULT_ENDPOINT).replace(
-    /\/+$/,
-    ''
-  );
+const endpoint = () => {
+  return (env.FORMSPREE_API_URL || DEFAULT_ENDPOINT).replace(/\/+$/, '');
 };
 
 /**
- * Picks the OAuth client id: the flag, then $FORMSPREE_CLIENT_ID, then the
- * endpoint's built-in id. Review apps get a new id on every redeploy, so
- * they always need the override.
+ * The OAuth client id: $FORMSPREE_CLIENT_ID (review apps get a new id on
+ * every redeploy), else the endpoint's built-in id.
  *
  * @param {string} endpoint
- * @param {string} [override]
  */
-const clientIdFor = (endpoint, override) => {
-  return override || env.FORMSPREE_CLIENT_ID || CLIENT_IDS[endpoint] || null;
+const clientIdFor = endpoint => {
+  return env.FORMSPREE_CLIENT_ID || CLIENT_IDS[endpoint] || null;
 };
 
 /**
@@ -207,7 +200,7 @@ exports.DEFAULT_ENDPOINT = DEFAULT_ENDPOINT;
 exports.DEFAULT_SCOPE = DEFAULT_SCOPE;
 exports.REQUEST_TIMEOUT = REQUEST_TIMEOUT;
 exports.OAuthError = OAuthError;
-exports.normalizeEndpoint = normalizeEndpoint;
+exports.endpoint = endpoint;
 exports.clientIdFor = clientIdFor;
 exports.sleep = sleep;
 exports.requestDeviceCode = requestDeviceCode;

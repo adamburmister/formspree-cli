@@ -22,7 +22,7 @@ const oauth = require('../../src/oauth');
 const cmd = require('../../src/cmds/login');
 
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
-const args = { endpoint: 'https://formspree.io', clientId: 'cli-client' };
+const args = {};
 
 let credentialsFile;
 let sleeps;
@@ -50,12 +50,15 @@ beforeEach(() => {
   });
   jest.spyOn(console, 'log').mockImplementation();
   jest.spyOn(console, 'error').mockImplementation();
+  process.env.FORMSPREE_CLIENT_ID = 'cli-client';
   process.exitCode = undefined;
 });
 
 afterEach(() => {
   jest.restoreAllMocks();
   axios.post.mockReset();
+  delete process.env.FORMSPREE_CLIENT_ID;
+  delete process.env.FORMSPREE_API_URL;
   process.exitCode = undefined;
 });
 
@@ -183,37 +186,32 @@ it('explains an unknown client id', async () => {
 
   expect(output(console.error)).toContain('cli-client');
   expect(output(console.log)).toContain('FORMSPREE_CLIENT_ID');
+  expect(output(console.log)).not.toContain('--client-id');
   expect(process.exitCode).toBe(1);
 });
 
 describe('choosing the client id', () => {
-  afterEach(() => {
+  it('asks for FORMSPREE_CLIENT_ID when the endpoint has none', async () => {
     delete process.env.FORMSPREE_CLIENT_ID;
-  });
-
-  it('uses FORMSPREE_CLIENT_ID when there is no --client-id', async () => {
-    process.env.FORMSPREE_CLIENT_ID = 'env-client';
-    serve({ polls: [() => tokenResponse()] });
-
-    await cmd.handler({ endpoint: 'https://review.formspree.io/' });
-
-    const device = parseCall(axios.post.mock.calls[0]);
-    expect(device.url).toBe('https://review.formspree.io/oauth/device');
-    expect(device.params.client_id).toBe('env-client');
-
-    const stored = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
-    expect(stored['https://review.formspree.io'].client_id).toBe('env-client');
-  });
-
-  it('asks for a client id when the endpoint has none', async () => {
     serve({ polls: [] });
 
-    await cmd.handler({ endpoint: 'https://formspree.io' });
+    await cmd.handler({});
 
     expect(axios.post).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('No OAuth client id');
     expect(output(console.error)).toContain('FORMSPREE_CLIENT_ID');
-    expect(output(console.error)).not.toMatch(/ -e /);
+    expect(output(console.error)).not.toContain('--client-id');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('ignores a --client-id flag', async () => {
+    delete process.env.FORMSPREE_CLIENT_ID;
+    serve({ polls: [] });
+
+    await cmd.handler({ clientId: 'flag-client' });
+
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain('No OAuth client id');
     expect(process.exitCode).toBe(1);
   });
 });
@@ -282,37 +280,40 @@ it('revokes the previous login when logging in again', async () => {
 });
 
 describe('choosing the endpoint', () => {
-  afterEach(() => {
-    delete process.env.FORMSPREE_API_URL;
-  });
-
-  it('uses FORMSPREE_API_URL when there is no --endpoint', async () => {
+  it('uses FORMSPREE_API_URL and says so', async () => {
     process.env.FORMSPREE_API_URL = 'https://review.formspree.io/';
     serve({ polls: [() => tokenResponse()] });
 
-    await cmd.handler({ clientId: 'cli-client' });
+    await cmd.handler({});
 
     const device = parseCall(axios.post.mock.calls[0]);
     expect(device.url).toBe('https://review.formspree.io/oauth/device');
     expect(tokenPolls()[0].url).toBe(
       'https://review.formspree.io/oauth/tokens'
     );
+    expect(output(console.log)).toContain(
+      'Using https://review.formspree.io (FORMSPREE_API_URL)'
+    );
 
     const stored = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
     expect(Object.keys(stored)).toEqual(['https://review.formspree.io']);
   });
 
-  it('prefers --endpoint over FORMSPREE_API_URL', async () => {
-    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
+  it('says nothing about the endpoint on formspree.io', async () => {
     serve({ polls: [() => tokenResponse()] });
 
-    await cmd.handler({
-      endpoint: 'https://other.formspree.io',
-      clientId: 'cli-client'
-    });
+    await cmd.handler({});
+
+    expect(output(console.log)).not.toContain('FORMSPREE_API_URL');
+  });
+
+  it('ignores an --endpoint flag', async () => {
+    serve({ polls: [() => tokenResponse()] });
+
+    await cmd.handler({ endpoint: 'https://other.formspree.io' });
 
     const device = parseCall(axios.post.mock.calls[0]);
-    expect(device.url).toBe('https://other.formspree.io/oauth/device');
+    expect(device.url).toBe('https://formspree.io/oauth/device');
   });
 });
 

@@ -76,7 +76,7 @@ it('lists the accounts the stored token covers', async () => {
   store({});
   serveApi(['fso_access_0']);
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   const [config] = axios.request.mock.calls[0];
   expect(config.method).toBe('get');
@@ -90,7 +90,7 @@ it('lists the accounts the stored token covers', async () => {
 });
 
 it('asks to log in when there is no stored token', async () => {
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(axios.request).not.toHaveBeenCalled();
   expect(output(console.error)).toContain('Not logged in');
@@ -103,7 +103,7 @@ it('refreshes an expired token first and saves the rotated pair', async () => {
   serveApi(['fso_access_1']);
   axios.post.mockImplementation(() => tokenResponse('1'));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(refreshes()).toEqual([
     {
@@ -133,7 +133,7 @@ it('refreshes once and retries when the API answers 401', async () => {
   serveApi(['fso_access_1']);
   axios.post.mockImplementation(() => tokenResponse('1'));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(refreshes()).toHaveLength(1);
   expect(bearers()).toEqual(['Bearer fso_access_0', 'Bearer fso_access_1']);
@@ -147,7 +147,7 @@ it('asks for a fresh login when the grant was revoked', async () => {
   serveApi([]);
   axios.post.mockImplementation(() => oauthError('invalid_grant'));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(refreshes()).toHaveLength(1);
   expect(bearers()).toEqual(['Bearer fso_access_0']);
@@ -160,7 +160,7 @@ it('asks for a fresh login when an expired token cannot be refreshed', async () 
   store({ expires_at: Date.now() - 1000 });
   axios.post.mockImplementation(() => oauthError('invalid_grant'));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(axios.request).not.toHaveBeenCalled();
   expect(output(console.error)).toContain('formspree login');
@@ -173,7 +173,7 @@ it('asks for a fresh login when the refreshed token is refused too', async () =>
   serveApi([]);
   axios.post.mockImplementation(() => tokenResponse('1'));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(refreshes()).toHaveLength(1);
   expect(bearers()).toEqual(['Bearer fso_access_0', 'Bearer fso_access_1']);
@@ -197,10 +197,7 @@ describe('when several CLI processes share the credentials', () => {
         })
     );
 
-    await Promise.all([
-      cmd.handler({ endpoint: ENDPOINT }),
-      cmd.handler({ endpoint: ENDPOINT })
-    ]);
+    await Promise.all([cmd.handler({}), cmd.handler({})]);
 
     expect(refreshes()).toHaveLength(1);
     expect(bearers()).toEqual(['Bearer fso_access_1', 'Bearer fso_access_1']);
@@ -217,7 +214,7 @@ describe('when several CLI processes share the credentials', () => {
       return response(401, {});
     });
 
-    await cmd.handler({ endpoint: ENDPOINT });
+    await cmd.handler({});
 
     expect(axios.post).not.toHaveBeenCalled();
     expect(bearers()).toEqual(['Bearer fso_access_0', 'Bearer fso_access_1']);
@@ -230,7 +227,7 @@ it('asks for a fresh login when the client is no longer recognized', async () =>
   store({ expires_at: Date.now() - 1000 });
   axios.post.mockImplementation(() => oauthError('invalid_client', 401));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(axios.request).not.toHaveBeenCalled();
   expect(output(console.error)).toContain('formspree login');
@@ -245,7 +242,7 @@ it('takes over a lock left behind by a process that died', async () => {
   serveApi(['fso_access_1']);
   axios.post.mockImplementation(() => tokenResponse('1'));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(refreshes()).toHaveLength(1);
   expect(bearers()).toEqual(['Bearer fso_access_1']);
@@ -261,7 +258,7 @@ it('names a personal account that has no name', async () => {
     })
   );
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(output(console.log)).toContain('Personal account (personal, abc123)');
   expect(output(console.log)).not.toContain('null');
@@ -278,7 +275,7 @@ describe('with an API key', () => {
     process.env.FORMSPREE_API_KEY = 'fsk_from_env';
     serveApi(['fsk_from_env']);
 
-    await cmd.handler({ endpoint: ENDPOINT });
+    await cmd.handler({});
 
     expect(bearers()).toEqual(['Bearer fsk_from_env']);
     expect(axios.post).not.toHaveBeenCalled();
@@ -292,7 +289,7 @@ describe('with an API key', () => {
     process.env.FORMSPREE_API_KEY = 'fsk_from_env';
     serveApi(['fsk_from_flag']);
 
-    await cmd.handler({ endpoint: ENDPOINT, key: 'fsk_from_flag' });
+    await cmd.handler({ key: 'fsk_from_flag' });
 
     expect(bearers()).toEqual(['Bearer fsk_from_flag']);
     expect(output(console.log)).toContain('Personal');
@@ -302,7 +299,7 @@ describe('with an API key', () => {
   it('works without a stored login', async () => {
     serveApi(['fsk_from_flag']);
 
-    await cmd.handler({ endpoint: ENDPOINT, key: 'fsk_from_flag' });
+    await cmd.handler({ key: 'fsk_from_flag' });
 
     expect(bearers()).toEqual(['Bearer fsk_from_flag']);
     expect(fs.existsSync(credentialsFile)).toBe(false);
@@ -316,7 +313,7 @@ describe('with an API key', () => {
       response(401, { status: 401, detail: 'This API key was revoked.' })
     );
 
-    await cmd.handler({ endpoint: ENDPOINT, key: 'fsk_revoked' });
+    await cmd.handler({ key: 'fsk_revoked' });
 
     expect(bearers()).toEqual(['Bearer fsk_revoked']);
     expect(axios.post).not.toHaveBeenCalled();
@@ -328,7 +325,7 @@ describe('with an API key', () => {
   });
 });
 
-it('uses FORMSPREE_API_URL when there is no --endpoint', async () => {
+it('uses FORMSPREE_API_URL and says so', async () => {
   fs.writeFileSync(
     credentialsFile,
     JSON.stringify({
@@ -352,8 +349,21 @@ it('uses FORMSPREE_API_URL when there is no --endpoint', async () => {
 
   const [config] = axios.request.mock.calls[0];
   expect(config.url).toBe('https://review.formspree.io/api/v1/accounts');
-  expect(output(console.log)).toContain('https://review.formspree.io');
+  expect(output(console.log)).toContain(
+    'Using https://review.formspree.io (FORMSPREE_API_URL)'
+  );
   expect(process.exitCode).toBeUndefined();
+});
+
+it('ignores an --endpoint flag', async () => {
+  store({});
+  serveApi(['fso_access_0']);
+
+  await cmd.handler({ endpoint: 'https://review.formspree.io' });
+
+  const [config] = axios.request.mock.calls[0];
+  expect(config.url).toBe('https://formspree.io/api/v1/accounts');
+  expect(output(console.log)).not.toContain('FORMSPREE_API_URL');
 });
 
 describe('the login hint', () => {
@@ -379,13 +389,5 @@ describe('the login hint', () => {
     await cmd.handler({});
 
     expect(hint()).toBe('Run $ formspree login');
-  });
-
-  it('sets FORMSPREE_API_URL, not -e, after a one-off --endpoint', async () => {
-    await cmd.handler({ endpoint: 'https://review.formspree.io' });
-
-    expect(hint()).toBe(
-      'Run $ FORMSPREE_API_URL=https://review.formspree.io formspree login'
-    );
   });
 });

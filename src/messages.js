@@ -1,6 +1,6 @@
 const chalk = require('chalk');
 const log = require('./log');
-const { normalizeEndpoint } = require('./oauth');
+const { DEFAULT_ENDPOINT } = require('./oauth');
 const { stripIndent } = require('common-tags');
 
 const authRequired = () => {
@@ -36,19 +36,15 @@ const authRequired = () => {
 };
 
 /**
- * The command that logs in to `endpoint` again: plain `formspree login`
- * when that already reaches it (the default, or $FORMSPREE_API_URL), else
- * with FORMSPREE_API_URL set for that one run.
+ * Says which server is in use when it isn't formspree.io, so a stray
+ * FORMSPREE_API_URL (say, from a project's .env) can't redirect a login
+ * unnoticed.
  *
  * @param {string} endpoint
- * @param {string} [vars] other env assignments to show before the command
  */
-const loginCommand = (endpoint, vars = '') => {
-  const url =
-    endpoint === normalizeEndpoint()
-      ? ''
-      : `FORMSPREE_API_URL=${chalk.yellow(endpoint)} `;
-  return `${chalk.gray('$')} ${url}${vars}formspree login`;
+const usingEndpoint = endpoint => {
+  if (endpoint === DEFAULT_ENDPOINT) return;
+  log.meta(`Using ${log.variable(endpoint)} (FORMSPREE_API_URL)`);
 };
 
 const clientIdRequired = endpoint => {
@@ -58,24 +54,24 @@ const clientIdRequired = endpoint => {
   // prettier-ignore
   console.error(stripIndent`
     Logging in needs the id of the "Formspree CLI" OAuth client
-    on that endpoint. There are couple ways to provide it:
+    on that endpoint. Set it in the ${log.variable('FORMSPREE_CLIENT_ID')} env variable:
 
-    - Use the ${log.variable('--client-id')} flag, or
-    - Set the ${log.variable('FORMSPREE_CLIENT_ID')} env variable
-
-    ${chalk.yellow.bold('-- Example ------------------------------------------------')}
-
-      ${loginCommand(endpoint, `FORMSPREE_CLIENT_ID=${chalk.yellow('<client-id>')} `)}
+      ${chalk.gray('$')} FORMSPREE_CLIENT_ID=${chalk.yellow('<client-id>')} formspree login
   `);
 
   console.error('');
 };
 
-const loginRequired = (endpoint, reason) => {
+const loginRequired = reason => {
   log.error(reason);
   console.error('');
-  console.error(`  Run ${loginCommand(endpoint)}`);
+  console.error(`  Run ${chalk.gray('$')} formspree login`);
   console.error('');
 };
 
-module.exports = { authRequired, clientIdRequired, loginRequired };
+module.exports = {
+  authRequired,
+  clientIdRequired,
+  loginRequired,
+  usingEndpoint
+};

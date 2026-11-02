@@ -48,7 +48,7 @@ afterEach(() => {
 it('revokes the grant and forgets the tokens', async () => {
   axios.post.mockImplementation(() => response(200, ''));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(axios.post.mock.calls.map(parseCall)).toEqual([
     {
@@ -68,7 +68,13 @@ it('revokes the grant and forgets the tokens', async () => {
 });
 
 it('says so when not logged in', async () => {
-  await cmd.handler({ endpoint: 'https://elsewhere.formspree.io' });
+  process.env.FORMSPREE_API_URL = 'https://elsewhere.formspree.io';
+
+  try {
+    await cmd.handler({});
+  } finally {
+    delete process.env.FORMSPREE_API_URL;
+  }
 
   expect(axios.post).not.toHaveBeenCalled();
   expect(output(console.log)).toContain('Not logged in');
@@ -78,7 +84,7 @@ it('says so when not logged in', async () => {
 it('forgets the tokens even when revoking fails', async () => {
   axios.post.mockImplementation(() => Promise.reject(new Error('ECONNRESET')));
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(stored()[ENDPOINT]).toBeUndefined();
   expect(output(console.error)).toContain('could not be revoked');
@@ -91,14 +97,14 @@ it('treats an already revoked login as logged out', async () => {
     response(400, { error: 'invalid_grant' })
   );
 
-  await cmd.handler({ endpoint: ENDPOINT });
+  await cmd.handler({});
 
   expect(stored()[ENDPOINT]).toBeUndefined();
   expect(output(console.log)).toContain('Logged out');
   expect(process.exitCode).toBeUndefined();
 });
 
-it('uses FORMSPREE_API_URL when there is no --endpoint', async () => {
+it('uses FORMSPREE_API_URL', async () => {
   axios.post.mockImplementation(() => response(200, ''));
   process.env.FORMSPREE_API_URL = OTHER;
 
@@ -113,4 +119,15 @@ it('uses FORMSPREE_API_URL when there is no --endpoint', async () => {
   expect(revoke.params.token).toBe('fso_refresh_9');
   expect(stored()[OTHER]).toBeUndefined();
   expect(stored()[ENDPOINT]).toEqual(entry('0'));
+});
+
+it('ignores an --endpoint flag', async () => {
+  axios.post.mockImplementation(() => response(200, ''));
+
+  await cmd.handler({ endpoint: OTHER });
+
+  const [revoke] = axios.post.mock.calls.map(parseCall);
+  expect(revoke.url).toBe('https://formspree.io/oauth/revoke');
+  expect(stored()[ENDPOINT]).toBeUndefined();
+  expect(stored()[OTHER]).toEqual(entry('9'));
 });
