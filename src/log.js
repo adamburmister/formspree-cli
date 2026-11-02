@@ -57,6 +57,25 @@ const preamble = () => {
 };
 
 /**
+ * The Formspree banner, from the f.ans design: a red block "F" with the
+ * wordmark beside its middle bar.
+ */
+const banner = () => {
+  const bar = chalk.bold.red('█'.repeat(10));
+  const edge = chalk.bold.red('▀'.repeat(10));
+  const wordmark = `${chalk.bold.white('FormSpree')}${chalk.white('.io')}`;
+
+  return [
+    bar,
+    edge,
+    `${bar}     ${wordmark}`,
+    edge,
+    chalk.bold.red('█'.repeat(5)),
+    chalk.bold.red('▀'.repeat(5))
+  ].join('\n');
+};
+
+/**
  * Colorizes a variable for display.
  *
  * @param {string} val
@@ -65,4 +84,12 @@ const variable = val => {
   return chalk.cyan.bold(`${val}`);
 };
 
-module.exports = { success, progress, meta, error, preamble, variable };
+module.exports = {
+  success,
+  progress,
+  meta,
+  error,
+  preamble,
+  banner,
+  variable
+};
