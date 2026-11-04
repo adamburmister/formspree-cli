@@ -6,7 +6,17 @@ const oauth = require('../oauth');
 const credentials = require('../credentials');
 const api = require('../api');
 
-const printError = error => {
+/**
+ * What went wrong, for an unexpected failure: the HTTP status and any OAuth
+ * error code, or a network error's code (ECONNREFUSED, say).
+ */
+const detail = error => {
+  if (!error.status) return error.code || error.message;
+  if (error.code === 'server_error') return `HTTP ${error.status}`;
+  return `HTTP ${error.status}, ${error.code}`;
+};
+
+const printError = (error, endpoint) => {
   switch (error.code) {
     case 'expired_token':
       log.error('The login code expired');
@@ -30,7 +40,9 @@ const printError = error => {
       return;
 
     default:
-      log.error('Login failed unexpectedly');
+      log.error(
+        `Login failed unexpectedly (${detail(error)} from ${endpoint})`
+      );
       return;
   }
 };
@@ -131,7 +143,7 @@ exports.handler = async args => {
     }
   } catch (error) {
     spinner.stop();
-    printError(error);
+    printError(error, endpoint);
     process.exitCode = 1;
   }
 };

@@ -204,6 +204,50 @@ it('asks for an update when the server does not know the CLI', async () => {
   expect(process.exitCode).toBe(1);
 });
 
+describe('unexpected failures', () => {
+  // Say what went wrong and which server said it, so a wrong
+  // FORMSPREE_API_URL or a server without the OAuth routes is obvious.
+
+  it('names the HTTP status and server for a non-OAuth answer', async () => {
+    serve({
+      device: response(405, '<!DOCTYPE html><title>Formspree</title>'),
+      polls: []
+    });
+
+    await cmd.handler(args);
+
+    expect(output(console.error)).toContain(
+      'Login failed unexpectedly (HTTP 405 from https://formspree.io)'
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('names an unexpected OAuth error code', async () => {
+    serve({ polls: [() => oauthError('invalid_request')] });
+
+    await cmd.handler(args);
+
+    expect(output(console.error)).toContain(
+      'Login failed unexpectedly (HTTP 400, invalid_request from https://formspree.io)'
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('names a network error', async () => {
+    const refused = Object.assign(new Error('connect ECONNREFUSED'), {
+      code: 'ECONNREFUSED'
+    });
+    serve({ device: Promise.reject(refused), polls: [] });
+
+    await cmd.handler(args);
+
+    expect(output(console.error)).toContain(
+      'Login failed unexpectedly (ECONNREFUSED from https://formspree.io)'
+    );
+    expect(process.exitCode).toBe(1);
+  });
+});
+
 describe('choosing the client id', () => {
   it('says the client id is not set when the endpoint has none', async () => {
     delete process.env.FORMSPREE_CLIENT_ID;

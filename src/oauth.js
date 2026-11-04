@@ -22,9 +22,10 @@ const CLIENT_IDS = {
 };
 
 class OAuthError extends Error {
-  constructor(code, description) {
+  constructor(code, description, status) {
     super(description || code);
     this.code = code;
+    this.status = status;
   }
 }
 
@@ -74,11 +75,16 @@ const post = (endpoint, path, params) => {
 };
 
 /**
- * Turns an OAuth error response into an OAuthError.
+ * Turns an error response into an OAuthError. A body that isn't an OAuth
+ * error (an HTML page, say) becomes `server_error`, keeping the status.
  */
 const errorFrom = response => {
   const data = response.data || {};
-  return new OAuthError(data.error || 'server_error', data.error_description);
+  return new OAuthError(
+    data.error || 'server_error',
+    data.error_description,
+    response.status
+  );
 };
 
 /**
