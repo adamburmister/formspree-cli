@@ -4,6 +4,7 @@ const log = require('./log');
 const versionCheck = require('./version_check');
 
 require('yargs')
+  .usage(`\n${log.banner()}\n\n$0 <command>`)
   .commandDir('cmds')
   .demandCommand()
   .help()
@@ -12,6 +13,12 @@ require('yargs')
     describe: 'Skip checking the npm registry for updates'
   })
   .middleware(args => {
+    if (args._[0] === 'login') {
+      console.log('');
+      console.log(log.banner());
+      console.log('');
+    }
+
     log.preamble();
 
     if (!args.skipVersionCheck) {

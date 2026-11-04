@@ -1,5 +1,6 @@
 const chalk = require('chalk');
 const log = require('./log');
+const { DEFAULT_ENDPOINT } = require('./oauth');
 const { stripIndent } = require('common-tags');
 
 const authRequired = () => {
@@ -34,4 +35,27 @@ const authRequired = () => {
   console.error('');
 };
 
-module.exports = { authRequired };
+/**
+ * Says which server is in use when it isn't formspree.io, so a stray
+ * FORMSPREE_API_URL (say, from a project's .env) can't redirect a login
+ * unnoticed.
+ *
+ * @param {string} endpoint
+ */
+const usingEndpoint = endpoint => {
+  if (endpoint === DEFAULT_ENDPOINT) return;
+  log.meta(`Using ${log.variable(endpoint)} (FORMSPREE_API_URL)`);
+};
+
+const loginRequired = reason => {
+  log.error(reason);
+  console.error('');
+  console.error(`  Run ${chalk.gray('$')} formspree login`);
+  console.error('');
+};
+
+module.exports = {
+  authRequired,
+  loginRequired,
+  usingEndpoint
+};
