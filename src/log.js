@@ -61,16 +61,15 @@ const preamble = () => {
  * wordmark beside its middle bar.
  */
 const banner = () => {
-  const arm =
-    ' ' +
-    chalk.bold.red('█'.repeat(10)) +
-    '\n ' +
-    chalk.bold.red('▀'.repeat(10));
+  const bar = ' ' + chalk.bold.red('█'.repeat(10));
+  const edge = ' ' + chalk.bold.red('▀'.repeat(10));
+  const arm = `${bar}\n${edge}`;
   const terminal =
     ' ' + chalk.bold.red('█'.repeat(5)) + '\n ' + chalk.bold.red('▀'.repeat(5));
   const wordmark = `${chalk.bold.white('Formspree')}${chalk.white('.io')}`;
 
-  return [arm, `${arm}     ${wordmark}`, terminal].join('\n');
+  // The wordmark sits beside the middle arm's bar, not its edge.
+  return [arm, `${bar}     ${wordmark}`, edge, terminal].join('\n');
 };
 
 /**
