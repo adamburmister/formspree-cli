@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { useTempConfigDir, output } = require('../helpers/oauth');
+const { useTempConfigDir, tokenResponse, output } = require('../helpers/oauth');
 const { login, answer, requests, headers, problem } = require('../helpers/v1');
 
 jest.mock('axios');
@@ -43,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   jest.restoreAllMocks();
   axios.request.mockReset();
+  axios.post.mockReset();
   delete process.env.FORMSPREE_API_KEY;
   process.exitCode = undefined;
 });
@@ -111,6 +112,41 @@ describe('projects list', () => {
     expect(output(console.error)).toContain('This API key was revoked.');
     expect(output(console.error)).toContain('FORMSPREE_API_KEY');
     expect(output(console.error)).not.toContain('formspree login');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('prints the refusal of a key as JSON with --json', async () => {
+    const refusal = problem(401, 'This API key was revoked.');
+    answer(401, refusal);
+
+    await list.handler({ key: 'fsk_revoked', json: true });
+
+    expect(JSON.parse(output(console.log))).toEqual(refusal);
+    expect(console.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('prints the refusal of a login as JSON with --json', async () => {
+    login(credentialsFile);
+    const refusal = problem(401, 'This token was revoked.');
+    answer(401, refusal);
+    axios.post.mockImplementation(() => tokenResponse('1'));
+
+    await list.handler({ json: true });
+
+    expect(axios.request).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(output(console.log))).toEqual(refusal);
+    expect(console.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('keeps stdout empty with --json when a refused key gets no problem back', async () => {
+    answer(401, '');
+
+    await list.handler({ key: 'fsk_revoked', json: true });
+
+    expect(console.log).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain('The API key was not accepted');
     expect(process.exitCode).toBe(1);
   });
 

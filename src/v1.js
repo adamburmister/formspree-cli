@@ -167,8 +167,15 @@ const call = async (args, req, { anonymous } = {}) => {
       ? await api.anonymous(endpoint, req)
       : await api.request(endpoint, req, { key: api.apiKey(args.key) });
   } catch (error) {
-    reportFailure(error, endpoint);
     process.exitCode = 1;
+    // A refused credential is the API's answer too: with --json it goes
+    // to stdout like any other refusal.
+    const refusal = error.response && error.response.data;
+    if (args.json && isObject(refusal)) {
+      console.log(JSON.stringify(refusal, null, 2));
+    } else {
+      reportFailure(error, endpoint);
+    }
     return null;
   }
 

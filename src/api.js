@@ -9,21 +9,24 @@ const EXPIRY_MARGIN = 60 * 1000;
 
 /**
  * Thrown when there is no usable token: never logged in, or the grant
- * was revoked or expired. The fix is always `formspree login`.
+ * was revoked or expired. The fix is always `formspree login`. `response`
+ * is the API's 401, when it was the API that refused the token.
  */
 class LoginRequired extends Error {
-  constructor(reason) {
+  constructor(reason, response) {
     super(reason || 'Not logged in');
+    this.response = response;
   }
 }
 
 /**
  * Thrown when the server refuses an API key. Logging in won't help:
- * the key itself has to be fixed or replaced.
+ * the key itself has to be fixed or replaced. `response` is the API's 401.
  */
 class InvalidKey extends Error {
-  constructor(reason) {
+  constructor(reason, response) {
     super(reason || 'The API key was not accepted');
+    this.response = response;
   }
 }
 
@@ -127,7 +130,7 @@ const request = async (endpoint, req, { key } = {}) => {
   if (key) {
     const response = await send(endpoint, key, req);
     if (response.status === 401) {
-      throw new InvalidKey(response.data && response.data.detail);
+      throw new InvalidKey(response.data && response.data.detail, response);
     }
     return response;
   }
@@ -144,7 +147,7 @@ const request = async (endpoint, req, { key } = {}) => {
   entry = await refresh(endpoint, entry);
   response = await send(endpoint, entry.access_token, req);
   if (response.status === 401) {
-    throw new LoginRequired('Your login was not accepted');
+    throw new LoginRequired('Your login was not accepted', response);
   }
   return response;
 };
