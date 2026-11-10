@@ -539,6 +539,30 @@ describe('forms validate', () => {
     expect(requests()[0].data).toEqual({ email: 'pair@example.com', age: 30 });
   });
 
+  it('sends a field named like an Object.prototype member as it was given', async () => {
+    answer(200, { valid: true, errors: [] });
+
+    await validate.handler({
+      form: 'xyzabcde',
+      fields: [
+        'constructor=x',
+        'toString=y',
+        '__proto__=z',
+        'hasOwnProperty=1',
+        'hasOwnProperty=2'
+      ]
+    });
+
+    expect(JSON.stringify(requests()[0].data)).toBe(
+      JSON.stringify({
+        constructor: 'x',
+        toString: 'y',
+        ['__proto__']: 'z',
+        hasOwnProperty: ['1', '2']
+      })
+    );
+  });
+
   it.each(['email', '=value'])('refuses the pair "%s"', async pair => {
     await validate.handler({ form: 'xyzabcde', fields: [pair] });
 

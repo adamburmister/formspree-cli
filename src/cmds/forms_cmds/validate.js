@@ -32,12 +32,16 @@ exports.builder = yargs => {
 };
 
 /**
- * The submission: the --from or --stdin JSON, with each name=value pair set over it.
- * A name given twice becomes a list, as in an HTML form.
+ * The submission: the --from or --stdin JSON, with each name=value pair
+ * set over it. A name given twice becomes a list, as in an HTML form.
+ *
+ * A field can be named anything, "constructor" and "__proto__" included,
+ * so names are tracked in a Set and defined as own properties rather than
+ * read from or assigned through the object's prototype.
  */
 const submission = args => {
   const data = v1.input(args);
-  const seen = {};
+  const values = new Map();
 
   [].concat(args.fields || []).forEach(pair => {
     const at = String(pair).indexOf('=');
@@ -48,8 +52,19 @@ const submission = args => {
     }
     const name = pair.slice(0, at);
     const value = pair.slice(at + 1);
-    data[name] = seen[name] ? [].concat(data[name], value) : value;
-    seen[name] = true;
+    values.set(
+      name,
+      values.has(name) ? [].concat(values.get(name), value) : value
+    );
+  });
+
+  values.forEach((value, name) => {
+    Object.defineProperty(data, name, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true
+    });
   });
 
   return data;
