@@ -1,10 +1,15 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const readline = require('readline');
 const axios = require('axios');
 const { useTempConfigDir, output } = require('../helpers/oauth');
 const { login, answer, requests, headers, problem } = require('../helpers/v1');
+const {
+  CTRL_C,
+  setTTY,
+  unsetTTY,
+  answerPrompts
+} = require('../helpers/prompt');
 
 jest.mock('axios');
 
@@ -73,22 +78,6 @@ const jsonFile = contents => {
   return file;
 };
 
-const setTTY = value => {
-  Object.defineProperty(process.stdin, 'isTTY', {
-    value,
-    configurable: true
-  });
-};
-
-const answerPrompt = reply => {
-  const close = jest.fn();
-  jest.spyOn(readline, 'createInterface').mockReturnValue({
-    question: (_question, callback) => callback(reply),
-    close
-  });
-  return close;
-};
-
 beforeEach(() => {
   credentialsFile = useTempConfigDir();
   jest.spyOn(console, 'log').mockImplementation();
@@ -100,7 +89,7 @@ afterEach(() => {
   jest.restoreAllMocks();
   axios.request.mockReset();
   delete process.env.FORMSPREE_API_KEY;
-  delete process.stdin.isTTY;
+  unsetTTY();
   process.exitCode = undefined;
 });
 
@@ -366,6 +355,255 @@ describe('forms create', () => {
   });
 });
 
+describe('forms create, asking', () => {
+  const account = {
+    id: 'acct_7d3f9a2c8e1b4f6a0c55',
+    name: 'Acme Agency',
+    kind: 'team'
+  };
+  const personal = {
+    id: 'acct_aaaaaaaaaaaaaaaaaaaa',
+    name: null,
+    kind: 'personal'
+  };
+  const marketing = { id: 'proj_2pn3r0jq7zz0t', name: 'Marketing site' };
+  const docs = { id: 'proj_docs000000000', name: 'Docs' };
+
+  // Answers the lookups the questions need, then the create.
+  const serve = ({ accounts = [account], projects = [marketing, docs] }) => {
+    axios.request.mockImplementation(config => {
+      const reply = (status, data) => Promise.resolve({ status, data });
+      if (config.method === 'post') {
+        return reply(200, { form, next_steps: nextSteps });
+      }
+      if (config.url.endsWith('/api/v1/accounts')) {
+        return reply(200, { accounts });
+      }
+      return projects
+        ? reply(200, { projects })
+        : reply(403, problem(403, 'This key lacks projects:read.'));
+    });
+  };
+
+  const created = () => requests().filter(r => r.method === 'post');
+
+  beforeEach(() => {
+    login(credentialsFile);
+    setTTY(true);
+  });
+
+  it('asks for every value when no option is given', async () => {
+    serve({});
+    const { asked, close } = answerPrompts([
+      'Contact form',
+      '2',
+      'team@acme.example, sales@acme.example',
+      'https://hooks.example/formspree',
+      'slack mailchimp',
+      'https://acme.example/thanks',
+      'off'
+    ]);
+
+    await create.handler({});
+
+    expect(asked).toEqual([
+      'Name (default "New Form"):',
+      'Pick a number, type a new project\'s name, or press Enter for "Default Project":',
+      'Email submissions to (optional, commas between several):',
+      'Webhook URL (optional):',
+      'Apps to connect (optional, like slack or mailchimp):',
+      'Redirect after submitting (optional):',
+      'reCAPTCHA (on or off, optional):'
+    ]);
+    const listed = output(console.error);
+    expect(listed).toContain('1. Marketing site (proj_2pn3r0jq7zz0t)');
+    expect(listed).toContain('2. Docs (proj_docs000000000)');
+
+    expect(requests().map(r => `${r.method} ${r.url}`)).toEqual([
+      'get https://formspree.io/api/v1/accounts',
+      'get https://formspree.io/api/v1/projects',
+      'post https://formspree.io/api/v1/forms'
+    ]);
+    expect(created()[0].data).toEqual({
+      name: 'Contact form',
+      redirect: 'https://acme.example/thanks',
+      captcha: null,
+      actions: [
+        { type: 'email', to: ['team@acme.example', 'sales@acme.example'] },
+        { type: 'webhook', url: 'https://hooks.example/formspree' },
+        { app: 'slack' },
+        { app: 'mailchimp' }
+      ],
+      project_id: 'proj_docs000000000'
+    });
+    expect(close).toHaveBeenCalled();
+    expect(output(console.log)).toContain('Form created');
+  });
+
+  it('sends nothing for the questions that are skipped', async () => {
+    serve({});
+    answerPrompts([]);
+
+    await create.handler({});
+
+    expect(created()[0].data).toEqual({});
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('skips the name question when the name was given', async () => {
+    serve({});
+    const { asked } = answerPrompts([]);
+
+    await create.handler({ name: 'Contact form' });
+
+    expect(asked[0]).toContain('Pick a number');
+    expect(asked).toHaveLength(6);
+    expect(created()[0].data).toEqual({ name: 'Contact form' });
+  });
+
+  it('takes text at the project question as a project name', async () => {
+    serve({});
+    answerPrompts(['', 'Landing pages']);
+
+    await create.handler({});
+
+    expect(created()[0].data).toEqual({ project: 'Landing pages' });
+  });
+
+  it('asks again for a project number that is not on the list', async () => {
+    serve({});
+    const { asked } = answerPrompts(['', '3', '0', '1']);
+
+    await create.handler({});
+
+    expect(asked.slice(1, 4)).toEqual([
+      expect.stringContaining('Pick a number'),
+      expect.stringContaining('Pick a number'),
+      expect.stringContaining('Pick a number')
+    ]);
+    expect(created()[0].data).toEqual({ project_id: 'proj_2pn3r0jq7zz0t' });
+  });
+
+  it("asks for a project's name when there are none to pick from", async () => {
+    serve({ projects: [] });
+    const { asked } = answerPrompts(['', 'Landing pages']);
+
+    await create.handler({});
+
+    expect(asked[1]).toBe('Project name (default "Default Project"):');
+    expect(created()[0].data).toEqual({ project: 'Landing pages' });
+  });
+
+  it('still asks when the login cannot list projects', async () => {
+    serve({ projects: null });
+    const { asked } = answerPrompts(['Contact form']);
+
+    await create.handler({});
+
+    expect(asked[1]).toBe('Project name (default "Default Project"):');
+    expect(created()[0].data).toEqual({ name: 'Contact form' });
+    expect(output(console.error)).not.toContain('projects:read');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('asks which account until one is picked, when there are several', async () => {
+    serve({ accounts: [personal, account] });
+    const { asked } = answerPrompts(['', '', '', '9', 'Acme', '2']);
+
+    await create.handler({});
+
+    expect(asked.slice(2, 6)).toEqual([
+      'Pick a number:',
+      'Pick a number:',
+      'Pick a number:',
+      'Pick a number:'
+    ]);
+    const listed = output(console.error);
+    expect(listed).toContain(
+      '1. Personal account (personal, acct_aaaaaaaaaaaaaaaaaaaa)'
+    );
+    expect(listed).toContain(
+      '2. Acme Agency (team, acct_7d3f9a2c8e1b4f6a0c55)'
+    );
+    expect(created()[0].data).toEqual({
+      account_id: 'acct_7d3f9a2c8e1b4f6a0c55'
+    });
+  });
+
+  it('asks for no account when an existing project is picked', async () => {
+    serve({ accounts: [personal, account] });
+    const { asked } = answerPrompts(['', '1']);
+
+    await create.handler({});
+
+    expect(asked).toHaveLength(7);
+    expect(created()[0].data).toEqual({ project_id: 'proj_2pn3r0jq7zz0t' });
+  });
+
+  it('asks again for reCAPTCHA until it is on, off or skipped', async () => {
+    serve({});
+    const { asked } = answerPrompts(['', '', '', '', '', '', 'maybe', 'on']);
+
+    await create.handler({});
+
+    expect(asked).toHaveLength(8);
+    expect(created()[0].data).toEqual({ captcha: { type: 'recaptcha' } });
+  });
+
+  it('creates nothing when the questions are abandoned', async () => {
+    serve({});
+    const { close } = answerPrompts(['Contact form', CTRL_C]);
+
+    await create.handler({});
+
+    expect(created()).toEqual([]);
+    expect(close).toHaveBeenCalled();
+    expect(output(console.error)).toContain('Cancelled');
+    expect(process.exitCode).toBe(130);
+  });
+
+  it.each([
+    ['an option is given', { email: 'team@acme.example' }],
+    ['--from is given', { from: null }],
+    ['--no-interactive is given', { interactive: false }],
+    ['--json is given', { json: true }]
+  ])('asks nothing when %s', async (_case, args) => {
+    serve({});
+    const { open } = answerPrompts([]);
+    if (args.from === null) args.from = jsonFile({ name: 'From the file' });
+
+    await create.handler(args);
+
+    expect(open).not.toHaveBeenCalled();
+    expect(requests()).toHaveLength(1);
+    expect(requests()[0].method).toBe('post');
+  });
+
+  it('asks nothing when nobody is at a terminal', async () => {
+    serve({});
+    setTTY(false);
+    const { open } = answerPrompts([]);
+
+    await create.handler({});
+
+    expect(open).not.toHaveBeenCalled();
+    expect(requests()).toHaveLength(1);
+    expect(created()[0].data).toEqual({});
+  });
+
+  it('asks nothing when there is no login to ask on behalf of', async () => {
+    fs.unlinkSync(credentialsFile);
+    const { open } = answerPrompts([]);
+
+    await create.handler({});
+
+    expect(open).not.toHaveBeenCalled();
+    expect(axios.request).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain('formspree login');
+    expect(process.exitCode).toBe(1);
+  });
+});
+
 describe('forms update', () => {
   it('sends only what the flags name', async () => {
     login(credentialsFile);
@@ -429,11 +667,12 @@ describe('forms delete', () => {
   it('deletes once the prompt is answered yes', async () => {
     login(credentialsFile);
     setTTY(true);
-    const close = answerPrompt('y');
+    const { asked, close } = answerPrompts(['y']);
     answer(204, '');
 
     await del.handler({ form: 'xyzabcde' });
 
+    expect(asked).toEqual(['Delete form xyzabcde and its submissions? (y/N)']);
     expect(close).toHaveBeenCalled();
     expect(requests()).toHaveLength(1);
     expect(output(console.log)).toContain('Form deleted: xyzabcde');
@@ -444,7 +683,7 @@ describe('forms delete', () => {
     async reply => {
       login(credentialsFile);
       setTTY(true);
-      answerPrompt(reply);
+      answerPrompts([reply]);
 
       await del.handler({ form: 'xyzabcde' });
 
@@ -453,6 +692,18 @@ describe('forms delete', () => {
       expect(process.exitCode).toBeUndefined();
     }
   );
+
+  it('deletes nothing when the prompt is abandoned with Ctrl+C', async () => {
+    login(credentialsFile);
+    setTTY(true);
+    answerPrompts([CTRL_C]);
+
+    await del.handler({ form: 'xyzabcde' });
+
+    expect(axios.request).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain('Cancelled');
+    expect(process.exitCode).toBe(130);
+  });
 
   it('reports a form that is not there', async () => {
     login(credentialsFile);

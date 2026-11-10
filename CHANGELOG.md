@@ -9,6 +9,7 @@
 - Add `projects list`, `get`, `create` and `rename`.
 - Add `forms list`, `get`, `create`, `update`, `delete` and `validate`.
 - Add `--json` to those commands, and `--idempotency-key` to the two creates.
+- `projects create` and `forms create` ask for their values when run in a terminal with no options.
 
 ## 0.9.0
 

@@ -1,6 +1,6 @@
-const readline = require('readline');
 const log = require('../../log');
 const v1 = require('../../v1');
+const prompt = require('../../prompt');
 
 exports.command = 'delete <form>';
 exports.desc = 'Deletes a form and its submissions';
@@ -18,28 +18,15 @@ exports.builder = yargs => {
     });
 };
 
-const confirm = question => {
-  return new Promise(resolve => {
-    const prompt = readline.createInterface({
-      input: process.stdin,
-      output: process.stderr
-    });
-    prompt.question(question, answer => {
-      prompt.close();
-      resolve(/^y(es)?$/i.test(answer.trim()));
-    });
-  });
-};
-
 exports.handler = v1.run(async args => {
   if (!args.yes) {
-    if (!process.stdin.isTTY) {
+    if (!prompt.interactive()) {
       throw new v1.UsageError(
         'Pass --yes to delete a form when nobody can confirm it'
       );
     }
-    const agreed = await confirm(
-      `Delete form ${args.form} and its submissions? (y/N) `
+    const agreed = await prompt.session(form =>
+      form.confirm(`Delete form ${args.form} and its submissions?`)
     );
     if (!agreed) {
       log.meta('Nothing deleted');

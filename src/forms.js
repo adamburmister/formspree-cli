@@ -1,5 +1,8 @@
 const chalk = require('chalk');
 const v1 = require('./v1');
+const prompt = require('./prompt');
+const accounts = require('./accounts');
+const projects = require('./projects');
 
 /**
  * A form on one line, as the lists show it.
@@ -130,4 +133,75 @@ const body = args => {
   return data;
 };
 
-module.exports = { line, show, bodyOptions, body };
+const split = answer => answer.split(/[\s,]+/).filter(Boolean);
+
+/**
+ * Asks for what `forms create` takes as options, apart from the form key:
+ * few forms need one, and --form-key is there for those. Every question can be
+ * skipped, except the account when there are several and the form isn't
+ * going into a project that already exists. Resolves with the answers
+ * under the options' names.
+ *
+ * @param {{ name?: string, accounts: object[], projects: object[] }} known
+ */
+const ask = ({ name, accounts: owners, projects: existing }) => {
+  return prompt.session(async form => {
+    const answers = {};
+
+    form.say('');
+    form.say(
+      `  ${chalk.bold('New form.')} ${chalk.gray(
+        'Press Enter to skip a question.'
+      )}`
+    );
+    form.say('');
+
+    if (name === undefined) {
+      answers.name = await form.text('Name', { hint: 'default "New Form"' });
+    }
+
+    if (existing.length) {
+      const project = await form.choose('Project', existing, {
+        render: projects.line,
+        hint:
+          'Pick a number, type a new project\'s name, or press Enter for "Default Project"',
+        allowText: true
+      });
+      if (project && project.item) answers.project = project.item.id;
+      if (project && project.text) answers.projectName = project.text;
+    } else {
+      answers.projectName = await form.text('Project name', {
+        hint: 'default "Default Project"'
+      });
+    }
+
+    // An existing project already has an account; anything else needs one.
+    if (owners.length > 1 && answers.project === undefined) {
+      answers.account = await accounts.pick(form, owners);
+    }
+
+    const emails = await form.text('Email submissions to', {
+      hint: 'optional, commas between several'
+    });
+    if (emails) answers.email = split(emails);
+
+    answers.webhook = await form.text('Webhook URL', { hint: 'optional' });
+
+    const apps = await form.text('Apps to connect', {
+      hint: 'optional, like slack or mailchimp'
+    });
+    if (apps) answers.app = split(apps);
+
+    answers.redirect = await form.text('Redirect after submitting', {
+      hint: 'optional'
+    });
+    answers.recaptcha = await form.toggle('reCAPTCHA', {
+      hint: 'on or off, optional'
+    });
+
+    form.say('');
+    return answers;
+  });
+};
+
+module.exports = { line, show, bodyOptions, body, ask };

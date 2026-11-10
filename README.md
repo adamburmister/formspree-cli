@@ -61,6 +61,15 @@ formspree forms update <form-id> --webhook https://example.com/hook
 formspree forms delete <form-id>
 ```
 
+Run in a terminal with no options, `projects create` and `forms create` ask
+for each value instead. Press Enter to skip a question that's optional, and
+Ctrl+C to stop without creating anything. A name given on the command line
+isn't asked for again:
+
+```bash
+formspree forms create "Contact"
+```
+
 `forms create` prints the form's endpoint and what's left to do: verify an
 email address, or connect an app in the dashboard. Without `--project` the
 form lands in the project named by `--project-name` (made if missing), else in
@@ -98,6 +107,9 @@ It exits with 1 when the submission isn't valid.
 
 ### In scripts
 
+- The creates only ask questions in a terminal. With piped input, `--json`,
+  `--no-interactive` or any option that describes the project or form, they
+  ask nothing and use what they were given.
 - `--json` prints the API's response, and nothing else, on stdout. When the API
   refuses a request the response is its error, and the exit code is 1.
 - `--idempotency-key <key>` on `projects create` and `forms create` makes a

@@ -4,6 +4,7 @@ const log = require('./log');
 const messages = require('./messages');
 const oauth = require('./oauth');
 const api = require('./api');
+const prompt = require('./prompt');
 
 /**
  * Thrown for input the CLI can't use, before anything is sent.
@@ -36,6 +37,34 @@ const idempotencyOption = yargs => {
     describe:
       'Makes a retry safe: the same key within 24 hours returns the first result instead of creating again'
   });
+};
+
+/**
+ * The option for the creates that ask for what they weren't given.
+ */
+const interactiveOption = yargs => {
+  return yargs.option('interactive', {
+    type: 'boolean',
+    describe:
+      'Ask for the values when no options are given. On in a terminal; turn off with --no-interactive'
+  });
+};
+
+/**
+ * Whether a create should ask for its values: none of the options that
+ * describe the new thing were passed, and someone is there to answer.
+ * --json and --no-interactive turn it off, as does a script's stdin.
+ *
+ * @param {object} args
+ * @param {string[]} names The options that describe what's created
+ */
+const asks = (args, names) => {
+  return (
+    args.interactive !== false &&
+    !args.json &&
+    prompt.interactive() &&
+    names.every(name => args[name] === undefined)
+  );
 };
 
 const idempotencyHeaders = args => {
@@ -143,6 +172,8 @@ const reportFailure = (error, endpoint) => {
   }
 };
 
+let announced = null;
+
 /**
  * Sends a v1 request with the API key or stored login, or with no
  * credential when `anonymous`. Resolves with the response when it's a 2xx.
@@ -152,21 +183,29 @@ const reportFailure = (error, endpoint) => {
  * With --json a refusal's body goes to stdout as it came, so a script gets
  * the problem's `errors` and `next_steps`.
  *
+ * An `optional` request is one the command can do without: when it fails
+ * it resolves with null and nothing else happens.
+ *
  * @param {object} args
  * @param {{ method: string, path: string, params?: object, data?: object, headers?: object }} req
- * @param {{ anonymous?: boolean }} [opts]
+ * @param {{ anonymous?: boolean, optional?: boolean }} [opts]
  */
-const call = async (args, req, { anonymous } = {}) => {
+const call = async (args, req, { anonymous, optional } = {}) => {
   const endpoint = oauth.endpoint();
   let response;
 
-  messages.usingEndpoint(endpoint, { stderr: args.json });
+  // Once per command, however many requests it sends.
+  if (announced !== endpoint) {
+    messages.usingEndpoint(endpoint, { stderr: args.json });
+    announced = endpoint;
+  }
 
   try {
     response = anonymous
       ? await api.anonymous(endpoint, req)
       : await api.request(endpoint, req, { key: api.apiKey(args.key) });
   } catch (error) {
+    if (optional) return null;
     process.exitCode = 1;
     // A refused credential is the API's answer too: with --json it goes
     // to stdout like any other refusal.
@@ -180,6 +219,7 @@ const call = async (args, req, { anonymous } = {}) => {
   }
 
   if (response.status >= 200 && response.status < 300) return response;
+  if (optional) return null;
 
   process.exitCode = 1;
   if (args.json && isObject(response.data)) {
@@ -202,15 +242,23 @@ const print = (args, response, render) => {
 };
 
 /**
- * Runs a command's handler, reporting input the CLI can't use.
+ * Runs a command's handler, reporting input the CLI can't use and a
+ * prompt that was abandoned.
  */
 const run = handler => async args => {
   try {
     await handler(args);
   } catch (error) {
-    if (!(error instanceof UsageError)) throw error;
-    log.error(error.message);
-    process.exitCode = 1;
+    if (error instanceof prompt.Cancelled) {
+      console.error('');
+      log.error('Cancelled. Nothing was changed');
+      process.exitCode = 130;
+    } else if (error instanceof UsageError) {
+      log.error(error.message);
+      process.exitCode = 1;
+    } else {
+      throw error;
+    }
   }
 };
 
@@ -283,6 +331,8 @@ module.exports = {
   options,
   idempotencyOption,
   idempotencyHeaders,
+  interactiveOption,
+  asks,
   replayed,
   call,
   print,

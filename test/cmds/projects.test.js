@@ -1,6 +1,12 @@
 const axios = require('axios');
 const { useTempConfigDir, tokenResponse, output } = require('../helpers/oauth');
 const { login, answer, requests, headers, problem } = require('../helpers/v1');
+const {
+  CTRL_D,
+  setTTY,
+  unsetTTY,
+  answerPrompts
+} = require('../helpers/prompt');
 
 jest.mock('axios');
 
@@ -45,6 +51,7 @@ afterEach(() => {
   axios.request.mockReset();
   axios.post.mockReset();
   delete process.env.FORMSPREE_API_KEY;
+  unsetTTY();
   process.exitCode = undefined;
 });
 
@@ -340,6 +347,141 @@ describe('projects create', () => {
     expect(output(console.error)).toContain('Request failed (405)');
     expect(console.log).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('projects create, asking', () => {
+  const account = {
+    id: 'acct_7d3f9a2c8e1b4f6a0c55',
+    name: 'Acme Agency',
+    kind: 'team'
+  };
+  const personal = {
+    id: 'acct_aaaaaaaaaaaaaaaaaaaa',
+    name: null,
+    kind: 'personal'
+  };
+
+  const serve = (accounts = [account]) => {
+    axios.request.mockImplementation(config => {
+      const data =
+        config.method === 'post'
+          ? { project, next_steps: [createStep] }
+          : { accounts };
+      return Promise.resolve({ status: 200, data });
+    });
+  };
+
+  const created = () => requests().filter(r => r.method === 'post');
+
+  beforeEach(() => {
+    login(credentialsFile);
+    setTTY(true);
+  });
+
+  it('asks for the name when no option is given', async () => {
+    serve();
+    const { asked, close } = answerPrompts(['Marketing site']);
+
+    await create.handler({});
+
+    expect(asked).toEqual(['Name (default "New Project"):']);
+    expect(requests().map(r => `${r.method} ${r.url}`)).toEqual([
+      'get https://formspree.io/api/v1/accounts',
+      'post https://formspree.io/api/v1/projects'
+    ]);
+    expect(created()[0].data).toEqual({ name: 'Marketing site' });
+    expect(close).toHaveBeenCalled();
+    expect(output(console.log)).toContain('Project created');
+  });
+
+  it('leaves the name to the server when the question is skipped', async () => {
+    serve();
+    answerPrompts(['']);
+
+    await create.handler({});
+
+    expect(created()[0].data).toEqual({});
+  });
+
+  it('asks which account when the login covers several', async () => {
+    serve([personal, account]);
+    const { asked } = answerPrompts(['Marketing site', '', '2']);
+
+    await create.handler({});
+
+    expect(asked).toEqual([
+      'Name (default "New Project"):',
+      'Pick a number:',
+      'Pick a number:'
+    ]);
+    expect(output(console.error)).toContain(
+      '2. Acme Agency (team, acct_7d3f9a2c8e1b4f6a0c55)'
+    );
+    expect(created()[0].data).toEqual({
+      name: 'Marketing site',
+      account_id: 'acct_7d3f9a2c8e1b4f6a0c55'
+    });
+  });
+
+  it('asks only for the account when the name was given', async () => {
+    serve([personal, account]);
+    const { asked } = answerPrompts(['1']);
+
+    await create.handler({ name: 'Marketing site' });
+
+    expect(asked).toEqual(['Pick a number:']);
+    expect(created()[0].data).toEqual({
+      name: 'Marketing site',
+      account_id: 'acct_aaaaaaaaaaaaaaaaaaaa'
+    });
+  });
+
+  it('asks nothing when the name was given and there is one account', async () => {
+    serve();
+    const { open } = answerPrompts([]);
+
+    await create.handler({ name: 'Marketing site' });
+
+    expect(open).not.toHaveBeenCalled();
+    expect(created()[0].data).toEqual({ name: 'Marketing site' });
+  });
+
+  it('creates nothing when the questions are abandoned', async () => {
+    serve();
+    answerPrompts([CTRL_D]);
+
+    await create.handler({});
+
+    expect(created()).toEqual([]);
+    expect(output(console.error)).toContain('Cancelled');
+    expect(process.exitCode).toBe(130);
+  });
+
+  it.each([
+    ['--account is given', { account: 'acct_7d3f9a2c8e1b4f6a0c55' }],
+    ['--no-interactive is given', { interactive: false }],
+    ['--json is given', { json: true }]
+  ])('asks nothing when %s', async (_case, args) => {
+    serve();
+    const { open } = answerPrompts([]);
+
+    await create.handler(args);
+
+    expect(open).not.toHaveBeenCalled();
+    expect(requests()).toHaveLength(1);
+    expect(requests()[0].method).toBe('post');
+  });
+
+  it('asks nothing when nobody is at a terminal', async () => {
+    serve();
+    setTTY(false);
+    const { open } = answerPrompts([]);
+
+    await create.handler({});
+
+    expect(open).not.toHaveBeenCalled();
+    expect(requests()).toHaveLength(1);
   });
 });
 

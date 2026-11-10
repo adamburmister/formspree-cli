@@ -6,7 +6,7 @@ exports.command = 'create [name]';
 exports.desc = 'Creates a project';
 
 exports.builder = yargs => {
-  v1.idempotencyOption(v1.options(yargs))
+  v1.interactiveOption(v1.idempotencyOption(v1.options(yargs)))
     .positional('name', {
       type: 'string',
       describe: "The project's name"
@@ -18,7 +18,27 @@ exports.builder = yargs => {
     });
 };
 
-exports.handler = v1.run(async args => {
+// The options that describe the project. With none of them, in a
+// terminal, the command asks instead.
+const OPTIONS = ['account'];
+
+exports.handler = v1.run(async given => {
+  let args = given;
+
+  if (v1.asks(args, OPTIONS)) {
+    const listed = await v1.call(args, {
+      method: 'get',
+      path: '/api/v1/accounts'
+    });
+    if (!listed) return;
+
+    const answers = await projects.ask({
+      name: args.name,
+      accounts: listed.data.accounts
+    });
+    args = Object.assign({}, args, answers);
+  }
+
   const data = {};
   if (args.name !== undefined) data.name = args.name;
   if (args.account) data.account_id = args.account;
