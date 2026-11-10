@@ -143,8 +143,14 @@ const request = async (endpoint, req, { key } = {}) => {
   if (response.status !== 401) return response;
 
   // The token may have been rotated or revoked since it was stored.
-  // Refresh once; a second 401 means the grant no longer works.
-  entry = await refresh(endpoint, entry);
+  // Refresh once; a second 401 means the grant no longer works. If the
+  // refresh shows the login is gone, the 401 is still the API's answer.
+  try {
+    entry = await refresh(endpoint, entry);
+  } catch (error) {
+    if (error instanceof LoginRequired) error.response = response;
+    throw error;
+  }
   response = await send(endpoint, entry.access_token, req);
   if (response.status === 401) {
     throw new LoginRequired('Your login was not accepted', response);

@@ -1,5 +1,10 @@
 const axios = require('axios');
-const { useTempConfigDir, tokenResponse, output } = require('../helpers/oauth');
+const {
+  useTempConfigDir,
+  oauthError,
+  tokenResponse,
+  output
+} = require('../helpers/oauth');
 const { login, answer, requests, headers, problem } = require('../helpers/v1');
 const {
   CTRL_D,
@@ -144,6 +149,35 @@ describe('projects list', () => {
     expect(axios.request).toHaveBeenCalledTimes(2);
     expect(JSON.parse(output(console.log))).toEqual(refusal);
     expect(console.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('prints the refusal as JSON with --json when the login cannot be refreshed', async () => {
+    login(credentialsFile);
+    const refusal = problem(401, 'This token was revoked.');
+    answer(401, refusal);
+    axios.post.mockImplementation(() => oauthError('invalid_grant'));
+
+    await list.handler({ json: true });
+
+    expect(axios.request).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(output(console.log))).toEqual(refusal);
+    expect(console.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('asks to log in again, without --json, when the login cannot be refreshed', async () => {
+    login(credentialsFile);
+    answer(401, problem(401, 'This token was revoked.'));
+    axios.post.mockImplementation(() => oauthError('invalid_grant'));
+
+    await list.handler({});
+
+    expect(console.log).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain(
+      'Your login has expired or was revoked'
+    );
+    expect(output(console.error)).toContain('formspree login');
     expect(process.exitCode).toBe(1);
   });
 
