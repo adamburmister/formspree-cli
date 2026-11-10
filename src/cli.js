@@ -19,6 +19,9 @@ require('yargs')
       console.log('');
     }
 
+    // --json keeps stdout for the response alone.
+    if (args.json) return {};
+
     log.preamble();
 
     if (!args.skipVersionCheck) {

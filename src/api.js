@@ -37,20 +37,35 @@ const apiKey = flag => flag || env.FORMSPREE_API_KEY || null;
 
 /**
  * Sends a v1 API request with a bearer credential: an OAuth access token
- * or an account key, which the server accepts the same way.
+ * or an account key, which the server accepts the same way. Without a
+ * bearer the request carries no credential.
+ *
+ * `params` is the query string and `data` a JSON body.
  */
-const send = (endpoint, bearer, { method, path }) => {
+const send = (endpoint, bearer, { method, path, params, data, headers }) => {
   return axios.request({
     method,
     url: `${endpoint}${path}`,
-    headers: {
-      Authorization: `Bearer ${bearer}`,
-      'User-Agent': `@formspree/cli@${version}`
-    },
+    params,
+    data,
+    headers: Object.assign(
+      {},
+      headers,
+      bearer ? { Authorization: `Bearer ${bearer}` } : {},
+      { 'User-Agent': `@formspree/cli@${version}` }
+    ),
     timeout: oauth.REQUEST_TIMEOUT,
     validateStatus: () => true
   });
 };
+
+/**
+ * Calls a v1 route that takes no credential, so it works with no login.
+ *
+ * @param {string} endpoint
+ * @param {{ method: string, path: string, data?: object }} req
+ */
+const anonymous = (endpoint, req) => send(endpoint, null, req);
 
 /**
  * Whether the entry's access token has expired, or is about to.
@@ -105,7 +120,7 @@ const refresh = (endpoint, stale) => {
  * token for the endpoint. Keys are sent as they are: no refresh, no lock.
  *
  * @param {string} endpoint
- * @param {{ method: string, path: string }} req
+ * @param {{ method: string, path: string, params?: object, data?: object, headers?: object }} req
  * @param {{ key?: string }} [auth]
  */
 const request = async (endpoint, req, { key } = {}) => {
@@ -134,4 +149,4 @@ const request = async (endpoint, req, { key } = {}) => {
   return response;
 };
 
-module.exports = { request, apiKey, LoginRequired, InvalidKey };
+module.exports = { request, anonymous, apiKey, LoginRequired, InvalidKey };

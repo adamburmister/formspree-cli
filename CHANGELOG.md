@@ -6,6 +6,9 @@
 - Require Node 10.12 or later.
 - Show the Formspree banner at the top of `formspree --help` and `formspree login`.
 - Accept an account API key with `--key` or `FORMSPREE_API_KEY` in place of a login, for CI.
+- Add `projects list`, `get`, `create` and `rename`.
+- Add `forms list`, `get`, `create`, `update`, `delete` and `validate`.
+- Add `--json` to those commands, and `--idempotency-key` to the two creates.
 
 ## 0.9.0
 

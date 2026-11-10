@@ -1,7 +1,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const http = require('http');
+const { spawn, spawnSync } = require('child_process');
 const { bannerAt } = require('./helpers/banner');
 
 const BIN = path.join(__dirname, '..', 'bin', 'formspree');
@@ -49,4 +50,93 @@ it('leaves other commands without the banner', () => {
 
   expect(bannerAt(whoami)).toBe(-1);
   expect(whoami.join('\n')).toContain('Formspree CLI v');
+});
+
+describe('against a local server', () => {
+  let server;
+  let received;
+
+  // Runs the real CLI without blocking, so the server here can answer it.
+  const runWithServer = (args, stdin) => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'formspree-cli-'));
+    const env = Object.assign({}, process.env, {
+      FORMSPREE_CONFIG_DIR: cwd,
+      FORMSPREE_API_URL: `http://127.0.0.1:${server.address().port}`,
+      FORMSPREE_API_KEY: 'fsk_test'
+    });
+    delete env.FORMSPREE_CLIENT_ID;
+
+    return new Promise(resolve => {
+      const child = spawn(
+        process.execPath,
+        [BIN].concat(args, '--skip-version-check'),
+        { cwd, env }
+      );
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', chunk => (stdout += chunk));
+      child.stderr.on('data', chunk => (stderr += chunk));
+      child.on('close', code => resolve({ code, stdout, stderr }));
+      child.stdin.end(stdin || '');
+    });
+  };
+
+  beforeEach(done => {
+    received = [];
+    server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', chunk => (body += chunk));
+      req.on('end', () => {
+        received.push({ method: req.method, url: req.url, body });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ project: { id: 'proj_x', name: 'Site' } }));
+      });
+    });
+    server.listen(0, '127.0.0.1', done);
+  });
+
+  afterEach(done => server.close(done));
+
+  it('keeps a long numeric id as it was typed', async () => {
+    const { code } = await runWithServer([
+      'projects',
+      'get',
+      '3122252403177421850'
+    ]);
+
+    expect(received.map(r => r.url)).toEqual([
+      '/api/v1/projects/3122252403177421850'
+    ]);
+    expect(code).toBe(0);
+  });
+
+  it('prints nothing but the response on stdout with --json', async () => {
+    const { code, stdout, stderr } = await runWithServer([
+      'projects',
+      'get',
+      'proj_x',
+      '--json'
+    ]);
+
+    expect(JSON.parse(stdout)).toEqual({
+      project: { id: 'proj_x', name: 'Site' }
+    });
+    expect(stderr).toContain('FORMSPREE_API_URL');
+    expect(code).toBe(0);
+  });
+
+  it('reads a form from stdin with --stdin, leaving flags unset', async () => {
+    await runWithServer(
+      ['forms', 'update', 'xyzabcde', '--stdin'],
+      JSON.stringify({ fields: { email: { type: 'email' } } })
+    );
+
+    expect(received).toEqual([
+      {
+        method: 'PATCH',
+        url: '/api/v1/forms/xyzabcde',
+        body: JSON.stringify({ fields: { email: { type: 'email' } } })
+      }
+    ]);
+  });
 });

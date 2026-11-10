@@ -38,12 +38,18 @@ const authRequired = () => {
 /**
  * Says which server is in use when it isn't formspree.io, so a stray
  * FORMSPREE_API_URL (say, from a project's .env) can't redirect a login
- * unnoticed.
+ * unnoticed. With `stderr` it stays out of stdout, which --json keeps for
+ * the response.
  *
  * @param {string} endpoint
+ * @param {{ stderr?: boolean }} [opts]
  */
-const usingEndpoint = endpoint => {
+const usingEndpoint = (endpoint, { stderr } = {}) => {
   if (endpoint === DEFAULT_ENDPOINT) return;
+  if (stderr) {
+    console.error(chalk.gray(`Using ${endpoint} (FORMSPREE_API_URL)`));
+    return;
+  }
   log.meta(`Using ${log.variable(endpoint)} (FORMSPREE_API_URL)`);
 };
 
