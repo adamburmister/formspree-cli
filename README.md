@@ -10,6 +10,8 @@ Run the following to install on your machine:
 npm i -g @formspree/cli
 ```
 
+The CLI needs Node 24 or later.
+
 ## Logging in
 
 Run the following to log in through your browser:
@@ -53,6 +55,7 @@ formspree projects list
 formspree projects create "Marketing site"
 formspree projects get <project-id>
 formspree projects rename <project-id> "Docs site"
+formspree projects delete <project-id>
 
 formspree forms list --project <project-id>
 formspree forms create "Contact" --project <project-id> --email you@example.com --app slack
@@ -61,17 +64,23 @@ formspree forms update <form-id> --webhook https://example.com/hook
 formspree forms delete <form-id>
 ```
 
-Run in a terminal with no options, `projects create` and `forms create` ask
-for each value instead. Press Enter to skip a question that's optional, and
-Ctrl+C to stop without creating anything. A name given on the command line
-isn't asked for again:
+Run in a terminal, `projects create` and `forms create` ask for each value
+they weren't given. Pick from a list with the arrow keys, tick apps with
+space, press Enter to skip a question that's optional, and Ctrl+C to stop
+without creating anything. A name, `--project`, `--project-name` or
+`--account` on the command line answers its own question, and the rest are
+still asked:
 
 ```bash
-formspree forms create "Contact"
+formspree forms create "Contact" --project <project-id>
 ```
 
-`forms create` prints the form's endpoint and what's left to do: verify an
-email address, or connect an app in the dashboard. Without `--project` the
+An option that sets the form's contents, like `--email` or `--from`, turns the
+questions off: the form is created from the options alone.
+
+`forms create` prints the form's endpoint, an HTML snippet to paste into your
+site, a link to more code examples in the dashboard, and what's left to do:
+verify an email address, or connect an app. Without `--project` the
 form lands in the project named by `--project-name` (made if missing), else in
 "Default Project".
 
@@ -94,7 +103,26 @@ formspree forms create --from contact.json --project <project-id>
 
 `forms update` changes only what you pass. It adds or replaces fields and
 actions, by field name and action type; it can't remove one. `forms delete` asks first, or takes
-`--yes` where nobody can answer.
+`--yes` where nobody can answer. Run it without a form id in a
+terminal and it lists your forms to pick from.
+
+`projects delete` works the same way, with one difference: Formspree only
+deletes a project that has no forms, so the command deletes the project's
+forms first. In a terminal it names them and asks once for the lot. With
+`--yes` it needs `--forms` as well before it deletes any:
+
+```bash
+formspree projects delete <project-id> --yes --forms
+```
+
+Without `--forms`, a project that has forms is left as it is. Neither delete
+can be undone: a form's submissions go with it, and a project's email
+templates, deployment history and the API keys limited to it go with the
+project. A key limited to one project can't delete that project.
+
+A deleted form takes the server a moment to remove, and until then its
+project can't be deleted. The command waits up to 30 seconds for that. If it's
+still not done, nothing is lost: run `projects delete` again.
 
 To check a submission against a form's rules without sending it, with no login
 needed:
@@ -108,13 +136,29 @@ It exits with 1 when the submission isn't valid.
 ### In scripts
 
 - The creates only ask questions in a terminal. With piped input, `--json`,
-  `--no-interactive` or any option that describes the project or form, they
-  ask nothing and use what they were given.
+  `--no-interactive` or any option that sets a form's contents, they ask
+  nothing and use what they were given.
 - `--json` prints the API's response, and nothing else, on stdout. When the API
   refuses a request the response is its error, and the exit code is 1.
 - `--idempotency-key <key>` on `projects create` and `forms create` makes a
   retry safe: for 24 hours, the same key with the same options returns the
   first result instead of creating again.
+
+## Development
+
+The CLI is written in TypeScript, in `src/`. Node runs it as it is, so there's
+no build step while you work on it:
+
+```bash
+npm install
+node src/cli.ts --help
+```
+
+- `npm test` runs the tests with vitest.
+- `npm run typecheck` type-checks the source and the tests.
+- `npm run build` compiles `src/` to `dist/`, which is what gets published.
+  `npm pack` and `npm publish` run it first.
+- `npm run format` formats everything with Prettier.
 
 ## Releasing
 
