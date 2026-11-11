@@ -51,6 +51,53 @@ it('shows the banner at the top of --help, after a blank line', () => {
   expect(help.join('\n')).toContain('formspree login');
 });
 
+it.each([
+  ['help', ['help']],
+  ['-h', ['-h']],
+  ["a command's --help", ['forms', 'create', '--help']],
+  ["a command's -h", ['forms', '-h']],
+  ["a command's help", ['projects', 'help']],
+])(
+  'shows the banner at the top of the help asked for with %s',
+  (_case, args) => {
+    const help = cli(args);
+
+    expect(help[0]).toBe('');
+    expect(bannerAt(help)).toBe(1);
+    expect(help.join('\n')).toContain('Options:');
+  },
+);
+
+it('shows the banner over the help a bare `formspree` gets', () => {
+  // The helper adds --skip-version-check: an option, but no command.
+  const bare = cli([]);
+
+  expect(bannerAt(bare)).toBe(1);
+  expect(bare.join('\n')).toContain('formspree login');
+});
+
+it.each(['forms', 'projects'])(
+  'shows the banner over the help `formspree %s` gets on its own',
+  (group) => {
+    const help = cli([group]);
+
+    expect(bannerAt(help)).toBe(1);
+    expect(help.join('\n')).toContain(`formspree ${group} list`);
+  },
+);
+
+it.each([
+  ['a mistyped command', ['logn']],
+  ["a group's mistyped command", ['forms', 'lst']],
+  ['a mistyped option', ['whoami', '--bogus']],
+  ['a missing argument', ['forms', 'get']],
+])('leaves the banner off the help that comes with %s', (_case, args) => {
+  const help = cli(args);
+
+  expect(bannerAt(help)).toBe(-1);
+  expect(help.join('\n')).toContain('Options:');
+});
+
 it('shows the banner before anything else when logging in', () => {
   const login = cli(['login']);
   const preamble = login.findIndex((line) => line.includes('Formspree CLI v'));
@@ -167,6 +214,26 @@ describe('against a local server', () => {
       project: { id: 'proj_x', name: 'Site' },
     });
     expect(stderr).toContain('FORMSPREE_API_URL');
+    expect(code).toBe(0);
+  });
+
+  it('prints nothing but the link on stdout with open --url', async () => {
+    const { code, stdout, stderr } = await cliWithServer(['open', '--url']);
+    const { port } = server.address() as AddressInfo;
+
+    expect(stdout).toBe(`http://127.0.0.1:${port}/forms\n`);
+    expect(stderr).toBe('');
+    expect(received).toEqual([]);
+    expect(code).toBe(0);
+  });
+
+  it('prints the link, without opening it, when the output is piped', async () => {
+    const { code, stdout } = await cliWithServer(['open']);
+    const { port } = server.address() as AddressInfo;
+
+    expect(stdout.trimEnd().split('\n').at(-1)).toBe(
+      `http://127.0.0.1:${port}/forms`,
+    );
     expect(code).toBe(0);
   });
 

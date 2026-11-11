@@ -9,7 +9,6 @@ import * as spinner from '../../spinner.ts';
 import type {
   FormsResponse,
   FormSummary,
-  Project,
   ProjectResponse,
   ProjectsResponse,
 } from '../../types.ts';
@@ -70,15 +69,7 @@ const pick = async (args: DeleteArgs): Promise<Target | undefined> => {
   }
 
   const project = await prompt.session((p) =>
-    p.select<Project>({
-      message: 'Project to delete',
-      options: listed.data.projects.map((item) => ({
-        value: item,
-        label: item.name || 'Untitled project',
-        hint: item.id,
-      })),
-      maxItems: 10,
-    }),
+    projects.pick(p, 'Project to delete', listed.data.projects),
   );
   return { id: project.id, title: projects.line(project) };
 };

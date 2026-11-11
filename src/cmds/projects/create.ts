@@ -26,14 +26,20 @@ const builder = (yargs: Argv) =>
 
 type CreateArgs = Args<typeof builder>;
 
+/** The questions a create was asked through, for it to finish off. */
+interface Session {
+  /** Stops the spinner, which says so if the project wasn't created. */
+  settled(response: ApiResponse<ProjectResponse> | null): void;
+  /** Ends the questions, once the project's details are under them. */
+  close(): void;
+}
+
 /**
- * Creates the project and prints it. In a session, `settled` stops its
- * spinner, which has by then said the project was created.
+ * Creates the project and prints it: its details in a note, and what's
+ * left to do in a box. With a `session` the note is drawn as the last
+ * part of the questions.
  */
-const create = async (
-  args: CreateArgs,
-  settled?: (response: ApiResponse<ProjectResponse> | null) => void,
-): Promise<void> => {
+const create = async (args: CreateArgs, session?: Session): Promise<void> => {
   const data: CreateProjectBody = {};
   if (args.name !== undefined) data.name = args.name;
   if (args.account) data.account_id = args.account;
@@ -46,7 +52,7 @@ const create = async (
       data,
       headers: v1.idempotencyHeaders(args),
     },
-    { settled },
+    { settled: session?.settled },
   );
   if (!response) return;
 
@@ -56,11 +62,13 @@ const create = async (
         'An earlier request used this idempotency key. Nothing new was created.',
       );
     }
-    if (!settled) {
-      log.success(`Project created: ${projects.line(project)}`);
+    if (session) {
+      projects.note(project, { guide: true });
+      session.close();
+    } else {
+      projects.note(project);
       console.log('');
     }
-    projects.show(project);
     v1.nextSteps(next_steps, {
       rewrite: {
         create_form: `Add a form to it: ${log.variable(
@@ -100,16 +108,22 @@ const handler = v1.run(async (args: CreateArgs) => {
     p.intro('New project');
     const answers = await projects.ask(p, known);
 
-    const spinner = p.spinner();
+    const spinner = p.spinner({ guide: false });
     spinner.start('Creating the project');
-    await create({ ...args, ...answers }, (response) => {
-      if (!response) {
-        spinner.error('The project was not created');
-        return;
-      }
-      spinner.stop(`Project created: ${projects.line(response.data.project)}`);
-      p.outro('Add a form to it next.');
-    });
+    await create(
+      { ...args, ...answers },
+      {
+        settled: (response) => {
+          // The note under it says so: no line of the spinner's own.
+          if (response) {
+            spinner.clear();
+          } else {
+            spinner.error('The project was not created');
+          }
+        },
+        close: () => p.outro('Add a form to it next.'),
+      },
+    );
   });
 });
 

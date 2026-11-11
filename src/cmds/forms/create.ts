@@ -37,14 +37,20 @@ const builder = (yargs: Argv) =>
 
 type CreateArgs = Args<typeof builder>;
 
+/** The questions a create was asked through, for it to finish off. */
+interface Session {
+  /** Stops the spinner, which says so if the form wasn't created. */
+  settled(response: ApiResponse<FormResponse> | null): void;
+  /** Ends the questions, once the form's details are under them. */
+  close(): void;
+}
+
 /**
- * Creates the form and prints it. In a session, `settled` stops its
- * spinner, which has by then said the form was created.
+ * Creates the form and prints it: its details in a note, the HTML for it
+ * bare, so it copies clean, and what's left to do in a box. With a
+ * `session` the note is drawn as the last part of the questions.
  */
-const create = async (
-  args: CreateArgs,
-  settled?: (response: ApiResponse<FormResponse> | null) => void,
-): Promise<void> => {
+const create = async (args: CreateArgs, session?: Session): Promise<void> => {
   const data: CreateFormBody = forms.body(args);
   if (args.project !== undefined) data.project_id = args.project;
   if (args.projectName !== undefined) data.project = args.projectName;
@@ -58,7 +64,7 @@ const create = async (
       data,
       headers: v1.idempotencyHeaders(args),
     },
-    { settled },
+    { settled: session?.settled },
   );
   if (!response) return;
 
@@ -68,11 +74,13 @@ const create = async (
         'An earlier request used this idempotency key. Nothing new was created.',
       );
     }
-    if (!settled) {
-      log.success(`Form created: ${forms.line(form)}`);
+    if (session) {
+      forms.note(form, { guide: true });
+      session.close();
+    } else {
+      forms.note(form);
       console.log('');
     }
-    forms.show(form);
     forms.embed(form);
     // The snippet is how to wire the endpoint, so that step isn't repeated.
     v1.nextSteps(next_steps, { rewrite: { wire_endpoint: null } });
@@ -127,17 +135,23 @@ const handler = v1.run(async (args: CreateArgs) => {
       projects: listed?.data.projects ?? [],
     });
 
-    const spinner = p.spinner();
+    const spinner = p.spinner({ guide: false });
     spinner.start('Creating the form');
-    await create({ ...args, ...answers }, (response) => {
-      if (!response) {
-        spinner.error('The form was not created');
-        return;
-      }
-      spinner.stop(`Form created: ${forms.line(response.data.form)}`);
-      // The snippet is printed outside the prompts, so it copies clean.
-      p.outro('Add it to your site with the HTML below.');
-    });
+    await create(
+      { ...args, ...answers },
+      {
+        settled: (response) => {
+          // The note under it says so: no line of the spinner's own.
+          if (response) {
+            spinner.clear();
+          } else {
+            spinner.error('The form was not created');
+          }
+        },
+        // The snippet is printed outside the prompts, so it copies clean.
+        close: () => p.outro('Add it to your site with the HTML below.'),
+      },
+    );
   });
 });
 

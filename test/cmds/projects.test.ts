@@ -3,6 +3,7 @@ import {
   useTempConfigDir,
   oauthError,
   tokenResponse,
+  deviceResponse,
   output,
   plain,
   response,
@@ -17,17 +18,24 @@ import {
   request,
   post,
 } from '../helpers/v1.ts';
+import chalk from 'chalk';
 import type { Account } from '../../src/types.ts';
 import { CTRL_C, setTTY, unsetTTY, answerPrompts } from '../helpers/clack.ts';
+import { bannerAt } from '../helpers/banner.ts';
 import { command as list } from '../../src/cmds/projects/list.ts';
 import { command as get } from '../../src/cmds/projects/get.ts';
 import { command as create } from '../../src/cmds/projects/create.ts';
 import { command as rename } from '../../src/cmds/projects/rename.ts';
 import { command as del } from '../../src/cmds/projects/delete.ts';
+import * as browser from '../../src/browser.ts';
 import { sleep } from '../../src/util.ts';
 
 vi.mock('axios');
 vi.mock('@clack/prompts', () => import('../helpers/clack.ts'));
+vi.mock('../../src/browser.ts', () => ({
+  available: vi.fn(() => false),
+  open: vi.fn(),
+}));
 vi.mock('../../src/util.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/util.ts')>()),
   sleep: vi.fn(),
@@ -61,6 +69,9 @@ beforeEach(() => {
   credentialsFile = useTempConfigDir();
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
+  // No browser to open, unless a test says there is one.
+  vi.mocked(browser.available).mockReset().mockReturnValue(false);
+  vi.mocked(browser.open).mockReset().mockResolvedValue(true);
   process.exitCode = undefined;
 });
 
@@ -286,6 +297,7 @@ describe('projects create', () => {
   it('creates a project and points at forms create', async () => {
     login(credentialsFile);
     answer(200, { project, next_steps: [createStep] });
+    const { framed } = answerPrompts();
 
     await run(create, { name: 'Marketing site' });
 
@@ -300,10 +312,42 @@ describe('projects create', () => {
 
     const shown = output(console.log);
     expect(shown).toContain('Project created: Marketing site');
+    // The new project's id is in the Formspree red, as the banner is.
+    const red = chalk.bold.red('|').split('|')[0];
+    const raw = vi
+      .mocked(console.log)
+      .mock.calls.map((args) => args.join(' '))
+      .join('\n');
+    expect(raw).toContain(`${red}proj_2pn3r0jq7zz0t`);
     expect(shown).toContain(
       'formspree forms create --project proj_2pn3r0jq7zz0t',
     );
     expect(shown).not.toContain('POST /api/v1/forms');
+    // One note says it was created, over its details, standing on its own
+    // without questions. What's left to do is in a box, as it always is.
+    expect(shown.match(/Project created/g)).toHaveLength(1);
+    expect(framed).toEqual([
+      {
+        kind: 'note',
+        title: 'Project created: Marketing site (proj_2pn3r0jq7zz0t)',
+        message: expect.stringMatching(
+          /^Account {4}acct_7d3f9a2c8e1b4f6a0c55\nKind {7}dashboard\n/,
+        ),
+        stderr: false,
+        guide: false,
+      },
+      {
+        kind: 'box',
+        title: 'Next steps',
+        message:
+          '- Add a form to it: formspree forms create --project proj_2pn3r0jq7zz0t',
+        stderr: false,
+        guide: false,
+      },
+    ]);
+    expect(framed[0]?.message).toContain(
+      'Dashboard  https://formspree.io/projects/3122252403177421850',
+    );
   });
 
   it("leaves the name to the server when it isn't given", async () => {
@@ -412,7 +456,11 @@ describe('projects create, asking', () => {
     name: null,
     kind: 'personal',
   };
-  const NAME = { kind: 'text', message: 'Name', placeholder: 'New Project' };
+  const NAME = {
+    kind: 'text',
+    message: 'Project name',
+    placeholder: 'New Project',
+  };
   const ACCOUNT = {
     kind: 'select',
     message: 'Account',
@@ -438,16 +486,21 @@ describe('projects create, asking', () => {
 
   it('asks for the name when no option is given', async () => {
     serve();
-    const { asked, intro, outro, spinner } = answerPrompts(['Marketing site']);
+    const { asked, framed, intro, outro, spinner } = answerPrompts([
+      'Marketing site',
+    ]);
 
     await run(create, {});
 
     expect(intro).toHaveBeenCalledWith('New project', expect.anything());
+    // The banner heads the questions, on stderr with them.
+    expect(bannerAt(output(console.error).split('\n'))).toBe(1);
+    expect(bannerAt(output(console.log).split('\n'))).toBe(-1);
     expect(asked).toEqual([NAME]);
     expect(spinner.start).toHaveBeenCalledWith('Creating the project');
-    expect(spinner.stop).toHaveBeenCalledWith(
-      expect.stringContaining('Project created: Marketing site'),
-    );
+    // The spinner leaves no line of its own: the note says it was created.
+    expect(spinner.clear).toHaveBeenCalledTimes(1);
+    expect(spinner.stop).not.toHaveBeenCalled();
     expect(outro).toHaveBeenCalledWith(
       'Add a form to it next.',
       expect.anything(),
@@ -457,11 +510,20 @@ describe('projects create, asking', () => {
       'post https://formspree.io/api/v1/projects',
     ]);
     expect(created()[0]?.data).toEqual({ name: 'Marketing site' });
-    // The spinner has said it was created; the details follow, once.
-    const shown = output(console.log);
-    expect(shown).not.toContain('Project created');
-    expect(shown).toContain('acct_7d3f9a2c8e1b4f6a0c55');
-    expect(shown).toContain('formspree forms create --project');
+    // Said once, by a note joined to the questions, with what's left
+    // boxed under them.
+    expect(output(console.log).match(/Project created/g)).toHaveLength(1);
+    expect(framed.map(({ kind, title }) => `${kind}: ${title}`)).toEqual([
+      'note: Project created: Marketing site (proj_2pn3r0jq7zz0t)',
+      'box: Next steps',
+    ]);
+    // In the Formspree red there too.
+    expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
+      chalk.bold.red('proj_2pn3r0jq7zz0t'),
+    );
+    expect(framed[0]?.guide).toBe(true);
+    expect(framed[0]?.message).toContain('acct_7d3f9a2c8e1b4f6a0c55');
+    expect(framed[1]?.message).toContain('formspree forms create --project');
   });
 
   it('uses the default name when the question is left empty', async () => {
@@ -592,6 +654,7 @@ describe('projects create, asking', () => {
     await run(create, {});
 
     expect(asked).toEqual([]);
+    expect(bannerAt(output(console.error).split('\n'))).toBe(-1);
     expect(requests()).toHaveLength(1);
   });
 });
@@ -1115,6 +1178,219 @@ describe('projects delete', () => {
         'formspree projects delete <project>',
       );
       expect(process.exitCode).toBe(1);
+    });
+  });
+});
+
+describe('a command that finds no login, in a terminal', () => {
+  const QUESTION = { kind: 'confirm', message: 'Not logged in. Log in now?' };
+  const LINK = 'https://formspree.io/device?user_code=WDJB-MJHT';
+
+  /**
+   * Answers the login's requests: the device code, then each poll for a
+   * token with `token`. A refresh of a stored login is refused.
+   */
+  const serveLogin = (token = () => tokenResponse()) => {
+    post.mockImplementation((url, body) => {
+      if (url.endsWith('/oauth/device')) return deviceResponse();
+      const grant = new URLSearchParams(body).get('grant_type');
+      return grant === 'refresh_token' ? oauthError('invalid_grant') : token();
+    });
+  };
+
+  beforeEach(() => {
+    vi.stubEnv('FORMSPREE_CLIENT_ID', 'cli-client');
+    setTTY(true);
+    vi.mocked(sleep).mockReset();
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    answer(200, { projects: [project] });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('offers to log in, then runs the command with the new login', async () => {
+    serveLogin();
+    const { asked } = answerPrompts([true]);
+
+    await run(list, {});
+
+    expect(asked).toEqual([QUESTION]);
+    expect(requests()).toEqual([
+      { method: 'get', url: 'https://formspree.io/api/v1/projects' },
+    ]);
+    expect(headers().Authorization).toBe('Bearer fso_access_1');
+    expect(output(console.log)).toContain('Marketing site');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('logs in when the question is left at its default', async () => {
+    serveLogin();
+    answerPrompts([]);
+
+    await run(list, {});
+
+    expect(output(console.log)).toContain('Marketing site');
+  });
+
+  it("keeps the login's lines on stderr, off the command's output", async () => {
+    serveLogin();
+    answerPrompts([true]);
+
+    await run(list, {});
+
+    expect(output(console.error)).toContain(LINK);
+    expect(output(console.error)).toContain('Logged in');
+    expect(output(console.log)).not.toContain(LINK);
+    expect(output(console.log)).not.toContain('Logged in');
+  });
+
+  it('opens the login link in the browser, where there is one', async () => {
+    vi.mocked(browser.available).mockReturnValue(true);
+    serveLogin();
+    answerPrompts([true]);
+
+    await run(list, {});
+
+    expect(browser.open).toHaveBeenCalledWith(LINK);
+    // The login talks on stderr here, so that's the terminal that's checked.
+    expect(browser.available).toHaveBeenCalledWith(process.stderr);
+    expect(output(console.error)).toContain(LINK);
+  });
+
+  it('opens nothing when the offer is turned down', async () => {
+    vi.mocked(browser.available).mockReturnValue(true);
+    serveLogin();
+    answerPrompts([false]);
+
+    await run(list, {});
+
+    expect(browser.open).not.toHaveBeenCalled();
+  });
+
+  it('stops, saying how to log in later, when the offer is turned down', async () => {
+    serveLogin();
+    answerPrompts([false]);
+
+    await run(list, {});
+
+    expect(post).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain('Not logged in');
+    expect(output(console.error)).toContain('formspree login');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('stops with the exit code of an interrupt on Ctrl+C', async () => {
+    serveLogin();
+    const { cancel } = answerPrompts([CTRL_C]);
+
+    await run(list, {});
+
+    expect(post).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalled();
+    expect(process.exitCode).toBe(130);
+  });
+
+  it('stops when the login is denied in the browser, and says only that', async () => {
+    serveLogin(() => oauthError('access_denied'));
+    answerPrompts([true]);
+
+    await run(list, {});
+
+    expect(request).not.toHaveBeenCalled();
+    expect(output(console.error)).toContain('Login was denied in the browser');
+    expect(output(console.error)).not.toContain('formspree login');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('offers again for a login that has expired or was revoked', async () => {
+    login(credentialsFile);
+    // The stored token is refused, and so is refreshing it.
+    request.mockImplementation((config) =>
+      config.headers.Authorization === 'Bearer fso_access_0'
+        ? response(401, problem(401, 'Token expired.'))
+        : response(200, { projects: [project] }),
+    );
+    serveLogin();
+    const { asked } = answerPrompts([true]);
+
+    await run(list, {});
+
+    expect(asked).toEqual([
+      {
+        kind: 'confirm',
+        message: 'Your login has expired or was revoked. Log in now?',
+      },
+    ]);
+    expect(output(console.log)).toContain('Marketing site');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('asks before the first request, even one the command could do without', async () => {
+    serveLogin();
+    request.mockImplementation((config) =>
+      config.method === 'delete'
+        ? response(204, '')
+        : config.url.endsWith('/forms')
+          ? response(200, { forms: [] })
+          : response(200, { project }),
+    );
+    const { asked } = answerPrompts([true]);
+
+    await run(del, { project: project.id, yes: true });
+
+    expect(asked).toEqual([QUESTION]);
+    // The lookup of the project's name is sent once there's a login.
+    expect(requests().map((r) => r.method)).toEqual(['get', 'get', 'delete']);
+    expect(output(console.log)).toContain(
+      'Project deleted: Marketing site (proj_2pn3r0jq7zz0t)',
+    );
+  });
+
+  describe('but does not offer', () => {
+    const refused = async (args: object) => {
+      serveLogin();
+      const { asked } = answerPrompts([true]);
+
+      await run(list, args);
+
+      expect(asked).toEqual([]);
+      expect(post).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    };
+
+    it('with --json', async () => {
+      await refused({ json: true });
+
+      expect(output(console.error)).toContain('formspree login');
+    });
+
+    it('off a terminal', async () => {
+      setTTY(false);
+
+      await refused({});
+
+      expect(output(console.error)).toContain('formspree login');
+    });
+
+    it('on a server the CLI has no client id for', async () => {
+      vi.unstubAllEnvs();
+
+      await refused({});
+
+      expect(output(console.error)).toContain('formspree login');
+    });
+
+    it('for an API key the server rejects', async () => {
+      answer(401, problem(401, 'This API key was revoked.'));
+
+      await refused({ key: 'fsk_revoked' });
+
+      expect(output(console.error)).toContain('This API key was revoked.');
+      expect(output(console.error)).not.toContain('formspree login');
     });
   });
 });

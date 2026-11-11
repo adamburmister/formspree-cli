@@ -4,6 +4,7 @@ import type { Argv } from 'yargs';
 import * as api from './api.ts';
 import type { ApiRequest, ApiResponse } from './api.ts';
 import * as log from './log.ts';
+import { logIn } from './login.ts';
 import * as messages from './messages.ts';
 import * as oauth from './oauth.ts';
 import * as prompt from './prompt.ts';
@@ -15,6 +16,17 @@ export class UsageError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'UsageError';
+  }
+}
+
+/**
+ * Thrown to end a command early, once why has been said and the exit code
+ * set: a login that was offered and turned down, or that didn't work.
+ */
+export class Stopped extends Error {
+  constructor() {
+    super('Stopped');
+    this.name = 'Stopped';
   }
 }
 
@@ -91,21 +103,22 @@ const detail = (line: string): void => {
 };
 
 /**
- * Prints the steps a response says are left. `rewrite` maps a step's name
- * to a line that replaces the server's, which is written for API callers,
- * or to null to leave the step out. With `linkedOnly`, steps without a
- * link are left out.
+ * Prints the steps a response says are left, in a box. `rewrite` maps a
+ * step's name to a line that replaces the server's, which is written for
+ * API callers, or to null to leave the step out. With `linkedOnly`, steps
+ * without a link are left out. With `stderr` the box goes there, for the
+ * steps that come with an error.
  */
 export const nextSteps = (
   steps: readonly NextStep[] | undefined,
   {
     rewrite = {},
     linkedOnly = false,
-    print = console.log,
+    stderr = false,
   }: {
     rewrite?: Record<string, string | null>;
     linkedOnly?: boolean;
-    print?: (line: string) => void;
+    stderr?: boolean;
   } = {},
 ): void => {
   const shown = (steps ?? []).filter(
@@ -113,17 +126,16 @@ export const nextSteps = (
   );
   if (!shown.length) return;
 
-  print('  Next steps:');
-  for (const step of shown) {
+  const lines = shown.flatMap((step) => {
     const replacement = rewrite[step.step];
-    if (replacement) {
-      print(`  - ${replacement}`);
-      continue;
-    }
-    print(`  - ${step.detail}`);
-    if (step.url) print(`    ${chalk.cyan(step.url)}`);
-  }
-  print('');
+    if (replacement) return [`- ${replacement}`];
+    return [
+      `- ${step.detail}`,
+      ...(step.url ? [`  ${chalk.cyan(step.url)}`] : []),
+    ];
+  });
+  prompt.box(lines.join('\n'), 'Next steps', { stderr });
+  (stderr ? console.error : console.log)('');
 };
 
 /**
@@ -161,7 +173,7 @@ const reportProblem = (response: ApiResponse): void => {
     console.error('');
   }
 
-  nextSteps(body.next_steps, { linkedOnly: true, print: console.error });
+  nextSteps(body.next_steps, { linkedOnly: true, stderr: true });
 };
 
 const reportFailure = (error: unknown, endpoint: string): void => {
@@ -203,6 +215,37 @@ export const refused = (args: CommonArgs, response: ApiResponse): void => {
   }
 };
 
+/**
+ * Offers to log in, for a command that found no login it can use, then
+ * logs in. Resolves with true once there's a login to send the request
+ * with, and with false when it's not the place to ask: with --json, off a
+ * terminal, or on a server the CLI has no client id for. A login that's
+ * turned down, or that fails, ends the command.
+ */
+const offerLogin = async (
+  args: CommonArgs,
+  error: api.LoginRequired,
+  endpoint: string,
+): Promise<boolean> => {
+  const clientId = oauth.clientIdFor(endpoint);
+  if (args.json || !prompt.interactive() || !clientId) return false;
+
+  const agreed = await prompt.session((p) =>
+    p.confirm({ message: `${error.message}. Log in now?`, initialValue: true }),
+  );
+  if (!agreed) {
+    messages.loginRequired(error.message);
+    process.exitCode = 1;
+    throw new Stopped();
+  }
+
+  // On stderr, with the question: stdout is the command's own output.
+  if (!(await logIn({ endpoint, clientId, stderr: true }))) {
+    throw new Stopped();
+  }
+  return true;
+};
+
 let announced: string | null = null;
 
 /**
@@ -210,6 +253,10 @@ let announced: string | null = null;
  * credential when `anonymous`. Resolves with the response when it's a 2xx.
  * Anything else is reported, the exit code is set, and it resolves with
  * null.
+ *
+ * In a terminal, a request that finds no login it can use offers to log
+ * in first, and is sent once that's done. Turning the login down ends the
+ * command: it rejects with Stopped, which `run` takes care of.
  *
  * An `optional` request is one the command can do without: when it fails
  * it resolves with null and nothing else happens.
@@ -219,6 +266,9 @@ let announced: string | null = null;
  *
  * `accept` names a refusal the command handles itself: a response it
  * returns true for is resolved with like a 2xx, and nothing is reported.
+ *
+ * `quiet` keeps stdout for what the command prints itself, as --json
+ * does: the note about which server is in use goes to stderr.
  */
 export const call = async <T>(
   args: CommonArgs,
@@ -228,11 +278,13 @@ export const call = async <T>(
     optional = false,
     settled,
     accept,
+    quiet = false,
   }: {
     anonymous?: boolean;
     optional?: boolean;
     settled?: ((response: ApiResponse<T> | null) => void) | undefined;
     accept?: ((response: ApiResponse) => boolean) | undefined;
+    quiet?: boolean;
   } = {},
 ): Promise<ApiResponse<T> | null> => {
   const endpoint = oauth.endpoint();
@@ -240,15 +292,31 @@ export const call = async <T>(
 
   // Once per command, however many requests it sends.
   if (announced !== endpoint) {
-    messages.usingEndpoint(endpoint, { stderr: args.json });
+    messages.usingEndpoint(endpoint, { stderr: args.json || quiet });
     announced = endpoint;
   }
 
+  const send = (): Promise<ApiResponse<T>> =>
+    anonymous
+      ? api.anonymous<T>(endpoint, request)
+      : api.request<T>(endpoint, request, { key: api.apiKey(args.key) });
+
   try {
-    response = anonymous
-      ? await api.anonymous<T>(endpoint, request)
-      : await api.request<T>(endpoint, request, { key: api.apiKey(args.key) });
+    try {
+      response = await send();
+    } catch (error) {
+      // With `settled` a spinner is running: no place for a question.
+      const offered =
+        error instanceof api.LoginRequired &&
+        !settled &&
+        (await offerLogin(args, error, endpoint));
+      if (!offered) throw error;
+      response = await send();
+    }
   } catch (error) {
+    if (error instanceof Stopped || error instanceof prompt.Cancelled) {
+      throw error;
+    }
     if (optional) return null;
     settled?.(null);
     process.exitCode = 1;
@@ -301,6 +369,9 @@ export const run =
       if (error instanceof prompt.Cancelled) {
         // The prompt has already said so.
         process.exitCode = 130;
+      } else if (error instanceof Stopped) {
+        // So has whatever stopped the command.
+        process.exitCode ??= 1;
       } else if (error instanceof UsageError) {
         log.error(error.message);
         process.exitCode = 1;
@@ -346,23 +417,32 @@ export const input = (args: {
 
 type Cell = string | readonly string[] | null | undefined | false;
 
+/** Labels with their values, for `table` and `rows`. */
+export type Pairs = ReadonlyArray<readonly [label: string, value: Cell]>;
+
 /**
- * Prints label and value pairs in two columns, skipping empty values. A
- * value can be an array of lines.
+ * Lays label and value pairs out in two columns, a line each, skipping
+ * empty values. A value can be an array of lines.
  */
-export const rows = (pairs: ReadonlyArray<readonly [string, Cell]>): void => {
+export const table = (pairs: Pairs): string[] => {
   const shown = pairs
     .map(([label, value]) => [label, value ? [value].flat() : []] as const)
     .filter(([, lines]) => lines.length);
   const width = Math.max(0, ...shown.map(([label]) => label.length));
 
-  for (const [label, lines] of shown) {
-    lines.forEach((line, i) => {
+  return shown.flatMap(([label, lines]) =>
+    lines.map((line, i) => {
       const head = (i === 0 ? label : '').padEnd(width);
-      console.log(`  ${chalk.gray(head)}  ${line}`);
-    });
-  }
-  if (shown.length) console.log('');
+      return `${chalk.gray(head)}  ${line}`;
+    }),
+  );
+};
+
+/** Prints label and value pairs as a table, indented, then a blank line. */
+export const rows = (pairs: Pairs): void => {
+  const lines = table(pairs);
+  for (const line of lines) console.log(`  ${line}`);
+  if (lines.length) console.log('');
 };
 
 /** A path segment for an id the user typed. */

@@ -11,10 +11,12 @@ import {
   request,
 } from '../helpers/v1.ts';
 import { CTRL_C, setTTY, unsetTTY, answerPrompts } from '../helpers/clack.ts';
+import { bannerAt } from '../helpers/banner.ts';
 import chalk from 'chalk';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import * as log from '../../src/log.ts';
 import { command as list } from '../../src/cmds/forms/list.ts';
 import { command as get } from '../../src/cmds/forms/get.ts';
 import { command as create } from '../../src/cmds/forms/create.ts';
@@ -215,17 +217,68 @@ describe('forms create', () => {
   it('shows the endpoint and what is left to do', async () => {
     login(credentialsFile);
     answer(200, { form, next_steps: nextSteps });
+    const { framed } = answerPrompts();
 
     await run(create, { name: 'Contact form' });
 
-    const shown = output(console.log);
-    expect(shown).toContain('Form created: Contact form (xyzabcde)');
-    expect(shown).toContain('https://formspree.io/f/xyzabcde');
-    expect(shown).toContain('pending verification');
-    expect(shown).toContain('Next steps:');
-    expect(shown).toContain('Ask the user to verify team@acme.example.');
-    expect(shown).toContain('https://formspree.io/account');
+    // One note says it was created, over its details, and what's left
+    // is in a box. The HTML between them has nothing around it.
+    expect(framed.map(({ kind, title }) => `${kind}: ${title}`)).toEqual([
+      'note: Form created: Contact form (xyzabcde)',
+      'box: Next steps',
+    ]);
+    expect(framed.every((drawn) => !drawn.stderr)).toBe(true);
+    expect(output(console.log).match(/Form created/g)).toHaveLength(1);
+
+    const [details, steps] = framed;
+    expect(details?.message).toMatch(
+      /^Submit to {2}https:\/\/formspree\.io\/f\/xyzabcde$/m,
+    );
+    expect(details?.message).toContain('pending verification');
+    // Off a set of questions, the note stands on its own.
+    expect(details?.guide).toBe(false);
+    expect(steps?.message).toBe(
+      [
+        '- Ask the user to verify team@acme.example.',
+        '  https://formspree.io/account',
+      ].join('\n'),
+    );
     expect(process.exitCode).toBeUndefined();
+  });
+
+  describe("the new form's id", () => {
+    // What turns text the Formspree red, as the banner is.
+    const RED = chalk.bold.red('|').split('|')[0];
+    const raw = (): string =>
+      vi
+        .mocked(console.log)
+        .mock.calls.map((args) => args.join(' '))
+        .join('\n');
+
+    it('is printed in the Formspree red, as the banner is', async () => {
+      login(credentialsFile);
+      answer(200, { form, next_steps: nextSteps });
+      answerPrompts();
+
+      await run(create, { name: 'Contact form' });
+
+      expect(raw()).toContain(`${RED}xyzabcde`);
+      expect(log.banner()).toContain(`${RED}█`);
+      // Still the same words.
+      expect(output(console.log)).toContain(
+        'Form created: Contact form (xyzabcde)',
+      );
+    });
+
+    it('is left gray where the form is only listed', async () => {
+      login(credentialsFile);
+      answer(200, { forms: [summary] });
+
+      await run(list, {});
+
+      expect(output(console.log)).toContain('Contact form (xyzabcde)');
+      expect(raw()).not.toContain(RED);
+    });
   });
 
   it('takes the form from --from, with flags set over it', async () => {
@@ -354,11 +407,26 @@ describe('forms create', () => {
       }),
     );
 
+    const { framed } = answerPrompts();
+
     await run(create, { redirect: 'https://acme.example/thanks' });
 
     const shown = output(console.error);
     expect(shown).toContain("doesn't include a custom redirect. (403)");
-    expect(shown).toContain('https://formspree.io/plans');
+    // The way out is boxed too, on stderr with the error.
+    expect(framed).toEqual([
+      {
+        kind: 'box',
+        title: 'Next steps',
+        message: [
+          '- They can compare plans and upgrade in the dashboard.',
+          '  https://formspree.io/plans',
+        ].join('\n'),
+        stderr: true,
+        guide: false,
+      },
+    ]);
+    expect(output(console.log)).not.toContain('https://formspree.io/plans');
     expect(process.exitCode).toBe(1);
   });
 });
@@ -394,12 +462,15 @@ describe('forms create, showing how to use the form', () => {
 
   it("prints the dashboard's HTML snippet for a form with no field rules", async () => {
     answer(200, { form: { ...form, fields: {} }, next_steps: nextSteps });
+    const { framed } = answerPrompts();
 
     await run(create, { name: 'Contact form' });
 
     expect(output(console.log)).toContain(
       WEBSITE_SNIPPET.map((line) => `  ${line}`).join('\n'),
     );
+    // Nothing is drawn around it, so it copies out of the terminal clean.
+    expect(framed.some((drawn) => drawn.message.includes('<form'))).toBe(false);
   });
 
   it('links to the code examples in the dashboard', async () => {
@@ -436,10 +507,13 @@ describe('forms create, showing how to use the form', () => {
 
   it('prints no next steps when wiring the endpoint was the only one', async () => {
     answer(200, { form, next_steps: [nextSteps[0]] });
+    const { framed } = answerPrompts();
 
     await run(create, { name: 'Contact form' });
 
-    expect(output(console.log)).not.toContain('Next steps:');
+    expect(framed.map((drawn) => drawn.title)).toEqual([
+      'Form created: Contact form (xyzabcde)',
+    ]);
   });
 
   it("builds the snippet from the form's own fields when it has rules", async () => {
@@ -535,10 +609,12 @@ describe('forms create, showing how to use the form', () => {
   it('prints no snippet with --json', async () => {
     const body = { form, next_steps: nextSteps };
     answer(200, body);
+    const { framed } = answerPrompts();
 
     await run(create, { name: 'Contact form', json: true });
 
     expect(JSON.parse(output(console.log))).toEqual(body);
+    expect(framed).toEqual([]);
   });
 });
 
@@ -560,7 +636,11 @@ describe('forms create, asking', () => {
   const docs: ListedProject = { id: 'proj_docs000000000', name: 'Docs' };
 
   // The questions, as the stand-in for clack records them.
-  const NAME = { kind: 'text', message: 'Name', placeholder: 'New Form' };
+  const NAME = {
+    kind: 'text',
+    message: 'Form name',
+    placeholder: 'New Form',
+  };
   const PROJECT = {
     kind: 'select',
     message: 'Project',
@@ -598,7 +678,7 @@ describe('forms create, asking', () => {
   const RECAPTCHA = {
     kind: 'select',
     message: 'reCAPTCHA',
-    options: ['Leave as it is', 'On', 'Off'],
+    options: ['On', 'Off'],
   };
   const CONTENTS = [EMAIL, WEBHOOK, APPS, REDIRECT, RECAPTCHA];
 
@@ -632,12 +712,12 @@ describe('forms create, asking', () => {
 
   it('asks for every value when no option is given', async () => {
     serve({});
-    const { asked, intro, outro, spinner } = answerPrompts([
+    const { asked, framed, intro, outro, spinner } = answerPrompts([
       'Contact form',
       'Docs',
       'team@acme.example, sales@acme.example',
       'https://hooks.example/formspree',
-      ['slack', 'mailchimp'],
+      ['Slack', 'Mailchimp'],
       'https://acme.example/thanks',
       'Off',
     ]);
@@ -645,6 +725,9 @@ describe('forms create, asking', () => {
     await run(create, {});
 
     expect(intro).toHaveBeenCalledWith('New form', expect.anything());
+    // The banner heads the questions, on stderr with them.
+    expect(bannerAt(output(console.error).split('\n'))).toBe(1);
+    expect(bannerAt(output(console.log).split('\n'))).toBe(-1);
     expect(asked).toEqual([NAME, PROJECT, ...CONTENTS]);
     expect(requests().map((r) => `${r.method} ${r.url}`)).toEqual([
       'get https://formspree.io/api/v1/accounts',
@@ -664,17 +747,23 @@ describe('forms create, asking', () => {
       project_id: 'proj_docs000000000',
     });
     expect(spinner.start).toHaveBeenCalledWith('Creating the form');
-    expect(spinner.stop).toHaveBeenCalledWith(
-      expect.stringContaining('Form created: Contact form'),
-    );
+    // The spinner leaves no line of its own: the note says it was created.
+    expect(spinner.clear).toHaveBeenCalledTimes(1);
+    expect(spinner.stop).not.toHaveBeenCalled();
+    expect(framed.map(({ kind, title }) => `${kind}: ${title}`)).toEqual([
+      'note: Form created: Contact form (xyzabcde)',
+      'box: Next steps',
+    ]);
+    // The note is joined to the questions, which end under it.
+    expect(framed[0]?.guide).toBe(true);
     expect(outro).toHaveBeenCalledWith(
       'Add it to your site with the HTML below.',
       expect.anything(),
     );
-    // The spinner has said it was created; the details follow, once.
+    // Said once, then the HTML with nothing around it.
     const shown = output(console.log);
-    expect(shown).not.toContain('Form created');
-    expect(shown).toContain('<form');
+    expect(shown.match(/Form created/g)).toHaveLength(1);
+    expect(shown).toContain('  <form');
     expect(shown).toContain('Code examples');
   });
 
@@ -719,6 +808,7 @@ describe('forms create, asking', () => {
     // The stand-in asks again within the one question, as clack does.
     expect(asked).toEqual([NAME, PROJECT, ...CONTENTS]);
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'New Form',
       redirect: 'https://acme.example/thanks',
       actions: [
@@ -728,13 +818,13 @@ describe('forms create, asking', () => {
     });
   });
 
-  it('sends only the default name when every question is left as it is', async () => {
+  it('sends the default name, with reCAPTCHA off, when every question is left as it is', async () => {
     serve({});
     answerPrompts([]);
 
     await run(create, {});
 
-    expect(created()[0]?.data).toEqual({ name: 'New Form' });
+    expect(created()[0]?.data).toEqual({ name: 'New Form', captcha: null });
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -745,7 +835,7 @@ describe('forms create, asking', () => {
     await run(create, { name: 'Contact form' });
 
     expect(asked).toEqual([PROJECT, ...CONTENTS]);
-    expect(created()[0]?.data).toEqual({ name: 'Contact form' });
+    expect(created()[0]?.data).toEqual({ name: 'Contact form', captcha: null });
   });
 
   it('asks for a name, and insists on one, when a new project is picked', async () => {
@@ -765,6 +855,7 @@ describe('forms create, asking', () => {
       { kind: 'text', message: 'Project name' },
     ]);
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'New Form',
       project: 'Landing pages',
     });
@@ -783,6 +874,7 @@ describe('forms create, asking', () => {
       'New project…',
     ]);
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'New Form',
       project_id: 'proj_default000000',
     });
@@ -796,6 +888,7 @@ describe('forms create, asking', () => {
 
     expect(asked[1]).toEqual(PROJECT_NAME);
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'New Form',
       project: 'Landing pages',
     });
@@ -808,7 +901,7 @@ describe('forms create, asking', () => {
     await run(create, {});
 
     expect(asked[1]).toEqual(PROJECT_NAME);
-    expect(created()[0]?.data).toEqual({ name: 'Contact form' });
+    expect(created()[0]?.data).toEqual({ name: 'Contact form', captcha: null });
     expect(output(console.error)).not.toContain('projects:read');
     expect(process.exitCode).toBeUndefined();
   });
@@ -821,6 +914,7 @@ describe('forms create, asking', () => {
 
     expect(asked).toEqual([NAME, PROJECT, ACCOUNT, ...CONTENTS]);
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'New Form',
       account_id: 'acct_7d3f9a2c8e1b4f6a0c55',
     });
@@ -834,32 +928,37 @@ describe('forms create, asking', () => {
 
     expect(asked).toEqual([NAME, PROJECT, ...CONTENTS]);
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'New Form',
       project_id: 'proj_2pn3r0jq7zz0t',
     });
   });
 
-  it('lists the apps to tick, and sends the ones ticked', async () => {
+  it('lists the apps to tick by name, and sends the ids of the ones ticked', async () => {
     serve({});
     const { asked } = answerPrompts([
       '',
       '',
       '',
       '',
-      ['github', 'googlesheets'],
+      ['GitHub', 'Google Sheets'],
     ]);
 
     await run(create, {});
 
+    // Each app is listed by the name people know it by, not the API's id.
     const apps = asked.find((question) => question.kind === 'multiselect');
     expect(apps?.options).toHaveLength(25);
-    expect(apps?.options?.slice(0, 3)).toEqual([
-      'activecampaign',
-      'airtable',
-      'asana',
+    expect(apps?.options?.slice(0, 4)).toEqual([
+      'ActiveCampaign',
+      'Airtable',
+      'Asana',
+      'Constant Contact',
     ]);
-    expect(apps?.options).toContain('zendesk');
+    expect(apps?.options).toContain('Zendesk');
+    expect(apps?.options).not.toContain('googlesheets');
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'New Form',
       actions: [{ app: 'github' }, { app: 'googlesheets' }],
     });
@@ -890,6 +989,7 @@ describe('forms create, asking', () => {
       'post https://formspree.io/api/v1/forms',
     ]);
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'Contact form',
       actions: [{ type: 'email', to: ['team@acme.example'] }],
       project_id: 'proj_2pn3r0jq7zz0t',
@@ -904,6 +1004,7 @@ describe('forms create, asking', () => {
 
     expect(asked).toEqual([NAME, ACCOUNT, ...CONTENTS]);
     expect(created()[0]?.data).toEqual({
+      captcha: null,
       name: 'New Form',
       project: 'Landing pages',
       account_id: 'acct_7d3f9a2c8e1b4f6a0c55',
@@ -928,6 +1029,7 @@ describe('forms create, asking', () => {
       expect(asked).toHaveLength(7);
       // The API takes a project or an account, not both.
       expect(created()[0]?.data).toEqual({
+        captcha: null,
         name: 'New Form',
         project_id: 'proj_2pn3r0jq7zz0t',
       });
@@ -943,6 +1045,7 @@ describe('forms create, asking', () => {
         'Account',
       );
       expect(created()[0]?.data).toEqual({
+        captcha: null,
         name: 'New Form',
         account_id: account.id,
       });
@@ -988,6 +1091,7 @@ describe('forms create, asking', () => {
     await run(create, {});
 
     expect(asked).toEqual([]);
+    expect(bannerAt(output(console.error).split('\n'))).toBe(-1);
     expect(requests()).toHaveLength(1);
     expect(created()[0]?.data).toEqual({});
   });
@@ -1166,6 +1270,8 @@ describe('forms delete', () => {
       expect(output(console.log)).toContain(
         'Form deleted: Newsletter (mnopqrst)',
       );
+      // One question and a confirmation aren't a form: no banner.
+      expect(bannerAt(output(console.error).split('\n'))).toBe(-1);
     });
 
     it('deletes nothing when the confirmation is declined', async () => {

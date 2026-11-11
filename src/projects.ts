@@ -1,5 +1,7 @@
 import chalk from 'chalk';
 import * as accounts from './accounts.ts';
+import * as log from './log.ts';
+import * as prompt from './prompt.ts';
 import type { Prompts } from './prompt.ts';
 import type { Account, Project } from './types.ts';
 import * as v1 from './v1.ts';
@@ -17,22 +19,72 @@ export interface ProjectAnswers {
   account?: string;
 }
 
+/** A project's name, as the lists and questions show it. */
+export const title = (project: Project): string =>
+  project.name || 'Untitled project';
+
 /** A project on one line, as the lists show it. */
 export const line = (project: Project): string =>
-  `${project.name || 'Untitled project'} ${chalk.gray(`(${project.id})`)}`;
+  `${title(project)} ${chalk.gray(`(${project.id})`)}`;
 
-/** Prints one project's details. */
-export const show = (project: Project): void => {
+/**
+ * A project that was just created, on one line: as `line`, with its id in
+ * the Formspree red, since that's what to copy.
+ */
+export const created = (project: Project): string =>
+  `${title(project)} ${chalk.gray('(')}${log.id(project.id)}${chalk.gray(')')}`;
+
+const details = (project: Project): v1.Pairs => {
   const dashboard = project.links?.dashboard;
 
-  v1.rows([
+  return [
     ['Account', project.account_id],
     ['Kind', project.kind],
     ['Timezone', project.timezone],
     ['Allowed domains', project.domain_whitelist],
     ['Dashboard', dashboard && chalk.cyan(dashboard)],
-  ]);
+  ];
 };
+
+/** Prints one project's details. */
+export const show = (project: Project): void => {
+  v1.rows(details(project));
+};
+
+/**
+ * Prints a new project as a note: that it was created, as the title, over
+ * its details. With `guide` the note is drawn as part of the questions
+ * that led to the project.
+ */
+export const note = (
+  project: Project,
+  options: { guide?: boolean } = {},
+): void => {
+  prompt.note(
+    v1.table(details(project)).join('\n'),
+    `Project created: ${created(project)}`,
+    options,
+  );
+};
+
+/**
+ * Asks which of `choices` is meant, with `message` saying what for.
+ * Resolves with the project.
+ */
+export const pick = (
+  p: Prompts,
+  message: string,
+  choices: readonly Project[],
+): Promise<Project> =>
+  p.select<Project>({
+    message,
+    options: choices.map((project) => ({
+      value: project,
+      label: title(project),
+      hint: project.id,
+    })),
+    maxItems: 10,
+  });
 
 const needsAccount = ({ account, accounts: choices }: KnownProject): boolean =>
   account === undefined && choices.length > 1;
@@ -53,7 +105,7 @@ export const ask = async (
 
   if (known.name === undefined) {
     answers.name = await p.text({
-      message: 'Name',
+      message: 'Project name',
       placeholder: 'New Project',
       defaultValue: 'New Project',
     });

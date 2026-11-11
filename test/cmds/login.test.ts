@@ -12,11 +12,16 @@ import {
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import * as browser from '../../src/browser.ts';
 import { sleep } from '../../src/util.ts';
 import { command as cmd } from '../../src/cmds/login.ts';
 import { run, post } from '../helpers/v1.ts';
 
 vi.mock('axios');
+vi.mock('../../src/browser.ts', () => ({
+  available: vi.fn(() => false),
+  open: vi.fn(),
+}));
 vi.mock('../../src/spinner.ts', () => ({
   start: vi.fn(() => ({ clear: vi.fn() })),
 }));
@@ -62,6 +67,9 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
   process.env.FORMSPREE_CLIENT_ID = 'cli-client';
+  // No browser to open, unless a test says there is one.
+  vi.mocked(browser.available).mockReset().mockReturnValue(false);
+  vi.mocked(browser.open).mockReset().mockResolvedValue(true);
   process.exitCode = undefined;
 });
 
@@ -439,4 +447,63 @@ it('creates missing config directories, private to the user', async () => {
   expect(stored['https://formspree.io'].access_token).toBe('fso_access_1');
   expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
   expect(fs.statSync(path.join(root, 'nested')).mode & 0o777).toBe(0o700);
+});
+
+describe('opening the login link', () => {
+  const LINK = 'https://formspree.io/device?user_code=WDJB-MJHT';
+
+  beforeEach(() => {
+    serve({ polls: [() => tokenResponse()] });
+  });
+
+  it('opens it in the browser, and still prints it with the code', async () => {
+    vi.mocked(browser.available).mockReturnValue(true);
+
+    await run(cmd, args);
+
+    expect(browser.open).toHaveBeenCalledWith(LINK);
+    // `login` talks on stdout, so that's the terminal that's checked.
+    expect(browser.available).toHaveBeenCalledWith(process.stdout);
+    expect(output(console.log)).toContain(
+      'Opening this link in your browser to log in:',
+    );
+    expect(output(console.log)).toContain(LINK);
+    expect(output(console.log)).toContain('WDJB-MJHT');
+    expect(output(console.log)).toContain('Logged in');
+  });
+
+  it('only prints it where there is no browser to open', async () => {
+    await run(cmd, args);
+
+    expect(browser.open).not.toHaveBeenCalled();
+    expect(output(console.log)).toContain(
+      'Open this link in your browser to log in:',
+    );
+    expect(output(console.log)).toContain(LINK);
+  });
+
+  it('only prints it with --no-browser', async () => {
+    vi.mocked(browser.available).mockReturnValue(true);
+
+    await run(cmd, { browser: false });
+
+    expect(browser.open).not.toHaveBeenCalled();
+    expect(output(console.log)).toContain(
+      'Open this link in your browser to log in:',
+    );
+    expect(output(console.log)).toContain('Logged in');
+  });
+
+  it('says so, and carries on, when the browser does not open', async () => {
+    vi.mocked(browser.available).mockReturnValue(true);
+    vi.mocked(browser.open).mockResolvedValue(false);
+
+    await run(cmd, args);
+
+    expect(output(console.log)).toContain(
+      "The browser didn't open. Open the link yourself.",
+    );
+    expect(output(console.log)).toContain('Logged in');
+    expect(process.exitCode).toBeUndefined();
+  });
 });

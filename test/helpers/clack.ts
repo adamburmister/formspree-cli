@@ -109,6 +109,54 @@ export const confirm = question('confirm');
 export const select = question('select');
 export const multiselect = question('multiselect');
 
+/** A box or a note a command drew. */
+export interface Framed {
+  kind: 'box' | 'note';
+  /** As it reads: without colors, or the padding a box's title is given. */
+  title: string;
+  /** Its text, without colors or the spaces that pad a line out. */
+  message: string;
+  stderr: boolean;
+  /** A note drawn as part of the questions above it. */
+  guide: boolean;
+}
+
+let framed: Framed[] = [];
+
+// eslint-disable-next-line no-control-regex
+const plain = (text: string): string => text.replace(/\u001b\[[0-9;]*m/g, '');
+
+/**
+ * Stands in for `box` and `note`: records what was drawn, and prints its
+ * title and text where the real one would, so a test of a command's
+ * output sees them in place.
+ */
+const frame =
+  (kind: Framed['kind']) =>
+  (
+    message = '',
+    title = '',
+    options: { output?: unknown; withGuide?: boolean } = {},
+  ): void => {
+    const stderr = options.output === process.stderr;
+    framed.push({
+      kind,
+      title: plain(title).trim(),
+      message: plain(message)
+        .split('\n')
+        .map((line) => line.trimEnd())
+        .join('\n'),
+      stderr,
+      guide: Boolean(options.withGuide),
+    });
+    const print = stderr ? console.error : console.log;
+    print(title.trim());
+    print(message);
+  };
+
+export const box = frame('box');
+export const note = frame('note');
+
 const theSpinner = {
   start: vi.fn(),
   message: vi.fn(),
@@ -120,16 +168,18 @@ export const spinner = () => theSpinner;
 
 /**
  * Scripts the answers to the questions, in order. Once they run out, every
- * question gets Enter. Returns the questions asked, and the spies for the
- * rest of what a session draws: intro, outro, cancel and the spinner.
+ * question gets Enter. Returns the questions asked, the boxes and notes
+ * drawn, and the spies for the rest of what a session draws: intro, outro,
+ * cancel and the spinner.
  */
 export const answerPrompts = (answers: Answer[] = []) => {
   queue = [...answers];
   asked = [];
+  framed = [];
   for (const spy of [intro, outro, cancel, ...Object.values(theSpinner)]) {
     spy.mockClear();
   }
-  return { asked, intro, outro, cancel, spinner: theSpinner };
+  return { asked, framed, intro, outro, cancel, spinner: theSpinner };
 };
 
 /** Makes stdin look like a terminal, or not. */

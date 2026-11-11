@@ -2,6 +2,9 @@ import chalk from 'chalk';
 import type { Option } from '@clack/prompts';
 import type { Argv } from 'yargs';
 import * as accounts from './accounts.ts';
+import * as log from './log.ts';
+import * as projects from './projects.ts';
+import * as prompt from './prompt.ts';
 import type { Prompts } from './prompt.ts';
 import type {
   Account,
@@ -16,9 +19,20 @@ import type {
 } from './types.ts';
 import * as v1 from './v1.ts';
 
+/** A form's name, as the lists and questions show it. */
+export const title = (form: FormSummary): string =>
+  form.name || 'Untitled form';
+
 /** A form on one line, as the lists show it. */
 export const line = (form: FormSummary): string =>
-  `${form.name || 'Untitled form'} ${chalk.gray(`(${form.hashid})`)}`;
+  `${title(form)} ${chalk.gray(`(${form.hashid})`)}`;
+
+/**
+ * A form that was just created, on one line: as `line`, with its hashid
+ * in the Formspree red, since that's what to copy.
+ */
+export const created = (form: FormSummary): string =>
+  `${title(form)} ${chalk.gray('(')}${log.id(form.hashid)}${chalk.gray(')')}`;
 
 const status = (value: FormAction['status']): string => {
   const text = value.replaceAll('_', ' ');
@@ -44,11 +58,10 @@ const captcha = (form: FormDetail): string | null => {
   return form.captcha ? 'on' : 'off';
 };
 
-/** Prints one form's details. */
-export const show = (form: FormDetail): void => {
+const details = (form: FormDetail): v1.Pairs => {
   const dashboard = form.links?.dashboard;
 
-  v1.rows([
+  return [
     ['Submit to', chalk.cyan(form.submission_url || form.url)],
     ['Project', form.project_id],
     ['Key', form.key],
@@ -61,7 +74,12 @@ export const show = (form: FormDetail): void => {
     ['reCAPTCHA', captcha(form)],
     ['Actions', (form.actions ?? []).map(action)],
     ['Dashboard', dashboard && chalk.cyan(dashboard)],
-  ]);
+  ];
+};
+
+/** Prints one form's details. */
+export const show = (form: FormDetail): void => {
+  v1.rows(details(form));
 };
 
 const escape = (value: string): string =>
@@ -168,19 +186,40 @@ const highlight = (html: string): string =>
     .join('\n');
 
 /**
+ * The form's page in the dashboard: where the API says it is, else worked
+ * out from the form's endpoint.
+ */
+export const dashboardUrl = (form: FormDetail): string =>
+  form.links?.dashboard ||
+  (form.submission_url || form.url).replace(/\/f\/([^/]+)$/, '/forms/$1');
+
+/**
  * Where the dashboard keeps more snippets for the form: React, Ajax and
  * the rest.
  */
-const examplesUrl = (form: FormDetail): string => {
-  const dashboard =
-    form.links?.dashboard ||
-    (form.submission_url || form.url).replace(/\/f\/([^/]+)$/, '/forms/$1');
-  return `${dashboard}/integration`;
+const examplesUrl = (form: FormDetail): string =>
+  `${dashboardUrl(form)}/integration`;
+
+/**
+ * Prints a new form as a note: that it was created, as the title, over
+ * its details. With `guide` the note is drawn as part of the questions
+ * that led to the form.
+ */
+export const note = (
+  form: FormDetail,
+  options: { guide?: boolean } = {},
+): void => {
+  prompt.note(
+    v1.table(details(form)).join('\n'),
+    `Form created: ${created(form)}`,
+    options,
+  );
 };
 
 /**
  * Prints how to put a new form on a site: the snippet, and the link to
- * more examples.
+ * more examples. The snippet has nothing drawn around it, so that it
+ * copies out of the terminal as it is.
  */
 export const embed = (form: FormDetail): void => {
   for (const line of highlight(snippet(form)).split('\n')) {
@@ -285,36 +324,37 @@ export const body = (args: FormContentArgs): FormBody => {
 const split = (answer: string): string[] =>
   answer.split(/[\s,]+/).filter(Boolean);
 
-// The apps the API takes as an { app } action, for the question to list.
+// The apps the API takes as an { app } action, for the question to list:
+// the id the API and --app know each by, and the name people know it by.
 // They mirror the server's list, so an app added there is missing here
 // until this is updated; --app still takes it.
-const APPS = [
-  'activecampaign',
-  'airtable',
-  'asana',
-  'constantcontact',
-  'convertkit',
-  'discord',
-  'freshdesk',
-  'github',
-  'gladly',
-  'googlesheets',
-  'gorgias',
-  'hubspot',
-  'klaviyo',
-  'linear',
-  'mailchimp',
-  'mailerlite',
-  'notion',
-  'pipedrive',
-  'salesforce',
-  'slack',
-  'stripe',
-  'telegram',
-  'trello',
-  'zapier',
-  'zendesk',
-] as const;
+const APPS: Readonly<Record<string, string>> = {
+  activecampaign: 'ActiveCampaign',
+  airtable: 'Airtable',
+  asana: 'Asana',
+  constantcontact: 'Constant Contact',
+  convertkit: 'ConvertKit',
+  discord: 'Discord',
+  freshdesk: 'Freshdesk',
+  github: 'GitHub',
+  gladly: 'Gladly',
+  googlesheets: 'Google Sheets',
+  gorgias: 'Gorgias',
+  hubspot: 'HubSpot',
+  klaviyo: 'Klaviyo',
+  linear: 'Linear',
+  mailchimp: 'Mailchimp',
+  mailerlite: 'MailerLite',
+  notion: 'Notion',
+  pipedrive: 'Pipedrive',
+  salesforce: 'Salesforce',
+  slack: 'Slack',
+  stripe: 'Stripe',
+  telegram: 'Telegram',
+  trello: 'Trello',
+  zapier: 'Zapier',
+  zendesk: 'Zendesk',
+};
 
 const DEFAULT_PROJECT_NAME = 'Default Project';
 
@@ -334,7 +374,7 @@ const pickProject = (
 ): Promise<ProjectChoice> => {
   const options: Option<ProjectChoice>[] = choices.map((project) => ({
     value: { kind: 'existing', id: project.id },
-    label: project.name || 'Untitled project',
+    label: projects.title(project),
     hint: project.id,
   }));
   // The cursor starts on an option by identity, so it's given the very
@@ -369,11 +409,33 @@ const emailsOrNothing = (value: string | undefined): string | undefined => {
   return valid ? undefined : 'Enter email addresses, with commas between them';
 };
 
+const nameRequired = (value: string | undefined): string | undefined =>
+  entered(value) ? undefined : 'Give it a name';
+
 const urlOrNothing = (value: string | undefined): string | undefined => {
   const url = entered(value);
   if (!url || /^https?:\/\/\S+$/.test(url)) return undefined;
   return 'Enter a URL that starts with http:// or https://';
 };
+
+/**
+ * Asks which of `choices` is meant, with `message` saying what for.
+ * Resolves with the form.
+ */
+export const pick = (
+  p: Prompts,
+  message: string,
+  choices: readonly FormSummary[],
+): Promise<FormSummary> =>
+  p.select<FormSummary>({
+    message,
+    options: choices.map((form) => ({
+      value: form,
+      label: title(form),
+      hint: form.hashid,
+    })),
+    maxItems: 10,
+  });
 
 /** What `forms create` already knows before it asks anything. */
 export interface KnownForm {
@@ -417,7 +479,7 @@ export const ask = async (
 
   if (known.name === undefined) {
     answers.name = await p.text({
-      message: 'Name',
+      message: 'Form name',
       placeholder: 'New Form',
       defaultValue: 'New Form',
     });
@@ -440,7 +502,7 @@ export const ask = async (
       answers.projectName = entered(
         await p.text({
           message: 'Project name',
-          validate: (value) => (entered(value) ? undefined : 'Give it a name'),
+          validate: nameRequired,
         }),
       );
     } else if (picked.kind === 'existing') {
@@ -489,7 +551,12 @@ export const ask = async (
 
   const apps = await p.multiselect<string>({
     message: 'Apps to connect (optional)',
-    options: APPS.map((app) => ({ value: app, label: app })),
+    options: Object.entries(APPS).map(([app, label]) => ({
+      value: app,
+      label,
+      // What --app takes for it.
+      hint: app,
+    })),
     required: false,
     maxItems: 10,
   });
@@ -503,15 +570,15 @@ export const ask = async (
     }),
   );
 
-  const recaptcha = await p.select<'default' | 'on' | 'off'>({
+  // Off is where a new form starts, so that's where the question does.
+  answers.recaptcha = await p.select<boolean>({
     message: 'reCAPTCHA',
     options: [
-      { value: 'default', label: 'Leave as it is' },
-      { value: 'on', label: 'On' },
-      { value: 'off', label: 'Off' },
+      { value: true, label: 'On' },
+      { value: false, label: 'Off' },
     ],
+    initialValue: false,
   });
-  if (recaptcha !== 'default') answers.recaptcha = recaptcha === 'on';
 
   return answers;
 };

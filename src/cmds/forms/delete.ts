@@ -3,7 +3,7 @@ import type { Args, Command } from '../../command.ts';
 import * as forms from '../../forms.ts';
 import * as log from '../../log.ts';
 import * as prompt from '../../prompt.ts';
-import type { FormsResponse, FormSummary } from '../../types.ts';
+import type { FormsResponse } from '../../types.ts';
 import * as v1 from '../../v1.ts';
 
 const builder = (yargs: Argv) =>
@@ -52,15 +52,7 @@ const pick = async (args: DeleteArgs): Promise<Target | undefined> => {
   }
 
   const form = await prompt.session((p) =>
-    p.select<FormSummary>({
-      message: 'Form to delete',
-      options: listed.data.forms.map((item) => ({
-        value: item,
-        label: item.name || 'Untitled form',
-        hint: item.hashid,
-      })),
-      maxItems: 10,
-    }),
+    forms.pick(p, 'Form to delete', listed.data.forms),
   );
   return { hashid: form.hashid, title: forms.line(form) };
 };

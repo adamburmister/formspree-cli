@@ -20,10 +20,15 @@ Run the following to log in through your browser:
 formspree login
 ```
 
-The CLI prints a link and a code. Open the link, check the code matches, and
-approve. The CLI stores the token in `~/.config/formspree/credentials.json`
+The CLI prints a link and a code, and opens the link in your browser. Check
+the code matches, and approve. Over SSH, or with `--no-browser`, it only
+prints the link for you to open. The CLI stores the token in `~/.config/formspree/credentials.json`
 (or under `$XDG_CONFIG_HOME/formspree`) and refreshes it in the background. If
 the login is revoked or expires, run `formspree login` again.
+
+You don't have to log in first. Run in a terminal, a command that needs a
+login and finds none asks whether to log in now, and carries on with what you
+asked for once you have. Say no and it stops, as it does off a terminal.
 
 - `formspree whoami` lists the accounts you're logged in to.
 - `formspree logout` revokes the login and removes the stored token.
@@ -124,6 +129,20 @@ A deleted form takes the server a moment to remove, and until then its
 project can't be deleted. The command waits up to 30 seconds for that. If it's
 still not done, nothing is lost: run `projects delete` again.
 
+To go to the dashboard from the command line, `open` opens a page in your
+browser:
+
+```bash
+formspree open               # the dashboard
+formspree open <form-id>     # a form's page
+formspree open <project-id>  # a project's page
+formspree open docs          # the help site
+```
+
+It prints the link as well. With `--url` it prints the link alone and opens
+nothing, and it does the same wherever there's no browser to open: over SSH,
+or when its output is piped.
+
 To check a submission against a form's rules without sending it, with no login
 needed:
 
@@ -140,6 +159,8 @@ It exits with 1 when the submission isn't valid.
   nothing and use what they were given.
 - `--json` prints the API's response, and nothing else, on stdout. When the API
   refuses a request the response is its error, and the exit code is 1.
+- A command never offers to log in with piped input or `--json`. With no
+  login it prints how to get one and exits with 1.
 - `--idempotency-key <key>` on `projects create` and `forms create` makes a
   retry safe: for 24 hours, the same key with the same options returns the
   first result instead of creating again.
