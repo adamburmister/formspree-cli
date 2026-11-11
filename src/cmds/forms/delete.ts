@@ -1,5 +1,6 @@
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as forms from '../../forms.ts';
 import * as log from '../../log.ts';
 import * as prompt from '../../prompt.ts';
@@ -118,6 +119,12 @@ const handler = v1.run(async (args: DeleteArgs) => {
 export const command: Command<typeof builder> = {
   command: 'delete [form]',
   describe: 'Deletes a form and its submissions',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 forms delete', 'Lists the forms to pick from, then asks'],
+    [
+      '$0 forms delete xyzabcde --yes',
+      'Deletes the form and its submissions without asking',
+    ],
+  ]),
   handler,
 };

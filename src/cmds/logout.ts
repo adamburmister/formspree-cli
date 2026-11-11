@@ -1,6 +1,7 @@
 import type { Argv } from 'yargs';
 import { JSON_BY_DEFAULT } from '../agent.ts';
 import type { Args, Command } from '../command.ts';
+import { withExamples } from '../command.ts';
 import * as credentials from '../credentials.ts';
 import * as failure from '../failure.ts';
 import * as log from '../log.ts';
@@ -90,6 +91,8 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
 export const command: Command<typeof builder> = {
   command: 'logout',
   describe: 'Logs out and revokes the stored token',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 logout', 'Revokes the login and removes it from this machine'],
+  ]),
   handler,
 };

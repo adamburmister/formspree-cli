@@ -3,6 +3,7 @@ import type { Argv } from 'yargs';
 import * as accounts from '../accounts.ts';
 import * as api from '../api.ts';
 import type { Args, Command } from '../command.ts';
+import { withExamples } from '../command.ts';
 import * as log from '../log.ts';
 import * as oauth from '../oauth.ts';
 import type { AccountsResponse } from '../types.ts';
@@ -50,6 +51,12 @@ const handler = v1.run(async (args: Args<typeof builder>) => {
 export const command: Command<typeof builder> = {
   command: 'whoami',
   describe: 'Shows the accounts you are logged in to',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 whoami', 'Lists the accounts the login or key can use'],
+    [
+      '$0 whoami --json',
+      'As JSON, with the server and the kind of credential in use',
+    ],
+  ]),
   handler,
 };

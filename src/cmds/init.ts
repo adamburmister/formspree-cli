@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { JSON_BY_DEFAULT } from '../agent.ts';
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../command.ts';
+import { withExamples } from '../command.ts';
 import * as log from '../log.ts';
 import { errorCode } from '../util.ts';
 
@@ -32,6 +33,8 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
 export const command: Command<typeof builder> = {
   command: 'init',
   describe: 'Creates a formspree.json file',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 init', 'Creates an empty formspree.json here'],
+  ]),
   handler,
 };

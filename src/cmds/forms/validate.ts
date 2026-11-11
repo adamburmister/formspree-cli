@@ -1,5 +1,6 @@
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as log from '../../log.ts';
 import type { ValidationResult } from '../../types.ts';
 import * as v1 from '../../v1.ts';
@@ -28,11 +29,7 @@ const builder = (yargs: Argv) =>
     .option('json', {
       type: 'boolean',
       describe: 'Print the API response as JSON',
-    })
-    .example(
-      '$0 forms validate xyzabcde email=ada@example.com message=Hello',
-      '',
-    );
+    });
 
 type ValidateArgs = Args<typeof builder>;
 
@@ -107,6 +104,11 @@ export const command: Command<typeof builder> = {
   command: 'validate <form> [fields..]',
   describe:
     "Checks a submission against a form's rules, storing nothing. Needs no login",
-  builder,
+  builder: withExamples(builder, [
+    [
+      '$0 forms validate xyzabcde email=ada@example.com message=Hello',
+      "Checks a submission against the form's rules, without sending it",
+    ],
+  ]),
   handler,
 };

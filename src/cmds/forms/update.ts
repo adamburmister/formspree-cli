@@ -1,5 +1,6 @@
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as forms from '../../forms.ts';
 import * as log from '../../log.ts';
 import type { FormResponse } from '../../types.ts';
@@ -43,6 +44,15 @@ const handler = v1.run(async (args: Args<typeof builder>) => {
 export const command: Command<typeof builder> = {
   command: 'update <form>',
   describe: 'Changes a form. Fields and actions you leave out stay as they are',
-  builder,
+  builder: withExamples(builder, [
+    [
+      '$0 forms update xyzabcde --webhook https://example.com/hook',
+      'Adds or replaces the webhook, and leaves the rest',
+    ],
+    [
+      '$0 forms update xyzabcde --from contact.json',
+      "Changes what the file names, like a field's rules",
+    ],
+  ]),
   handler,
 };

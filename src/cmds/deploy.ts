@@ -4,6 +4,7 @@ import type { DeployResponse } from '@formspree/deploy';
 import chalk from 'chalk';
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../command.ts';
+import { withExamples } from '../command.ts';
 import * as failure from '../failure.ts';
 import * as log from '../log.ts';
 import * as messages from '../messages.ts';
@@ -273,6 +274,15 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
 export const command: Command<typeof builder> = {
   command: 'deploy',
   describe: 'Deploys formspree.json',
-  builder,
+  builder: withExamples(builder, [
+    [
+      '$0 deploy -k <deploy-key>',
+      'Deploys the formspree.json in this directory',
+    ],
+    [
+      '$0 deploy --json',
+      'Prints the result as JSON, with the key in FORMSPREE_DEPLOY_KEY',
+    ],
+  ]),
   handler,
 };

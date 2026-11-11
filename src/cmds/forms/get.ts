@@ -1,5 +1,6 @@
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as forms from '../../forms.ts';
 import type { FormResponse } from '../../types.ts';
 import * as v1 from '../../v1.ts';
@@ -29,6 +30,8 @@ const handler = v1.run(async (args: Args<typeof builder>) => {
 export const command: Command<typeof builder> = {
   command: 'get <form>',
   describe: 'Shows a form with its fields and actions',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 forms get xyzabcde', 'Shows the form, its fields and its actions'],
+  ]),
   handler,
 };

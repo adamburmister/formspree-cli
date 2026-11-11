@@ -1,6 +1,7 @@
 import type { Argv } from 'yargs';
 import { JSON_BY_DEFAULT } from '../agent.ts';
 import type { Args, Command } from '../command.ts';
+import { withExamples } from '../command.ts';
 import * as failure from '../failure.ts';
 import type { Step } from '../failure.ts';
 import * as log from '../log.ts';
@@ -226,6 +227,13 @@ const handler = async (args: LoginArgs): Promise<void> => {
 export const command: Command<typeof builder> = {
   command: 'login',
   describe: 'Logs in to Formspree in your browser',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 login', 'Opens the browser and waits for you to approve'],
+    [
+      '$0 login --json',
+      'For an agent: prints the link for someone to approve, and returns',
+    ],
+    ['$0 login --complete', 'Finishes that login once it has been approved'],
+  ]),
   handler,
 };

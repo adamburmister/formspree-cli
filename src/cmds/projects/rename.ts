@@ -1,5 +1,6 @@
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as log from '../../log.ts';
 import * as projects from '../../projects.ts';
 import type { ProjectResponse } from '../../types.ts';
@@ -35,6 +36,11 @@ const handler = v1.run(async (args: Args<typeof builder>) => {
 export const command: Command<typeof builder> = {
   command: 'rename <project> <name>',
   describe: 'Renames a project',
-  builder,
+  builder: withExamples(builder, [
+    [
+      '$0 projects rename proj_2pn3r0jq7zz0t "Docs site"',
+      'Renames the project',
+    ],
+  ]),
   handler,
 };

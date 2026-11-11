@@ -1,6 +1,7 @@
 import type { Argv } from 'yargs';
 import type { ApiResponse } from '../../api.ts';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as forms from '../../forms.ts';
 import * as log from '../../log.ts';
 import * as projects from '../../projects.ts';
@@ -328,6 +329,16 @@ const handler = v1.run(async (args: DeleteArgs) => {
 export const command: Command<typeof builder> = {
   command: 'delete [project]',
   describe: 'Deletes a project, and its forms once you agree to that',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 projects delete', 'Lists the projects to pick from, then asks'],
+    [
+      '$0 projects delete proj_2pn3r0jq7zz0t --yes',
+      'Deletes a project that has no forms, without asking',
+    ],
+    [
+      '$0 projects delete proj_2pn3r0jq7zz0t --yes --forms',
+      "Deletes the project's forms and their submissions too",
+    ],
+  ]),
   handler,
 };

@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as forms from '../../forms.ts';
 import * as log from '../../log.ts';
 import type { FormsResponse } from '../../types.ts';
@@ -37,6 +38,12 @@ const handler = v1.run(async (args: Args<typeof builder>) => {
 export const command: Command<typeof builder> = {
   command: 'list',
   describe: 'Lists your forms',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 forms list', 'Lists every form the login or key can see'],
+    [
+      '$0 forms list --project proj_2pn3r0jq7zz0t --json',
+      "One project's forms, as JSON",
+    ],
+  ]),
   handler,
 };

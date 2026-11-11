@@ -1,5 +1,6 @@
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as projects from '../../projects.ts';
 import type { ProjectResponse } from '../../types.ts';
 import * as v1 from '../../v1.ts';
@@ -29,6 +30,8 @@ const handler = v1.run(async (args: Args<typeof builder>) => {
 export const command: Command<typeof builder> = {
   command: 'get <project>',
   describe: 'Shows a project',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 projects get proj_2pn3r0jq7zz0t', 'Shows the project'],
+  ]),
   handler,
 };

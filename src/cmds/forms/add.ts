@@ -1,6 +1,7 @@
 import type { Argv } from 'yargs';
 import { JSON_BY_DEFAULT } from '../../agent.ts';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import { readConfig, writeConfig } from '../../config.ts';
 import type { SiteConfig } from '../../config.ts';
 import * as failure from '../../failure.ts';
@@ -63,6 +64,11 @@ const handler = (args: Args<typeof builder>): void => {
 export const command: Command<typeof builder> = {
   command: 'add <key> <name>',
   describe: 'Adds a new form to config',
-  builder,
+  builder: withExamples(builder, [
+    [
+      '$0 forms add contact "Contact"',
+      'Adds a form with the key "contact" to formspree.json',
+    ],
+  ]),
   handler,
 };

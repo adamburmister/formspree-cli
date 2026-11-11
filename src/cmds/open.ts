@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import type { Argv } from 'yargs';
 import * as browser from '../browser.ts';
 import type { Args, Command } from '../command.ts';
+import { withExamples } from '../command.ts';
 import * as failure from '../failure.ts';
 import * as forms from '../forms.ts';
 import * as log from '../log.ts';
@@ -94,6 +95,14 @@ export const command: Command<typeof builder> = {
   command: 'open [target]',
   describe:
     'Opens the dashboard, a form, a project or the docs in your browser',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 open', 'Opens the dashboard'],
+    ['$0 open xyzabcde', "Opens a form's page"],
+    [
+      '$0 open proj_2pn3r0jq7zz0t --url',
+      "Prints a project's link without opening it",
+    ],
+    ['$0 open docs', 'Opens the help site'],
+  ]),
   handler,
 };

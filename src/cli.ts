@@ -14,6 +14,7 @@ import * as agent from './agent.ts';
 import * as failure from './failure.ts';
 import * as log from './log.ts';
 import * as terminal from './terminal.ts';
+import { commandOf, explain } from './usage.ts';
 import { version } from './version.ts';
 import { versionCheck } from './version_check.ts';
 
@@ -30,6 +31,18 @@ const cli = yargs(argv)
   // after it are still the command's own: `--email a@b.c Contact`.
   .parserConfiguration({ 'greedy-arrays': false })
   .usage('$0 <command>')
+  // Piped somewhere, help isn't wrapped: each option and each example's
+  // command stays on one line, to be read or copied whole.
+  .wrap(
+    terminal.styled(process.stdout)
+      ? Math.min(120, yargs().terminalWidth())
+      : null,
+  )
+  .example([
+    ['$0 forms create "Contact" --email you@example.com', 'Creates a form'],
+    ['$0 forms list --json', 'Lists your forms as JSON'],
+    ['$0 forms create --help', "Shows one command's options and examples"],
+  ])
   .command(deploy)
   .command(init)
   .command(login)
@@ -118,9 +131,32 @@ const json =
   argv.includes('--json') ||
   (!argv.includes('--no-json') && agent.prefersJson());
 
-// yargs would print its help and the error and exit with 1. This does
-// the same with the exit code for a command line that can't be used,
-// and as JSON with --json.
+/**
+ * The help for the command being run, read for what an error needs: its
+ * line of usage, and the names of the options it takes.
+ */
+const helpFacts = (): { usage: string | undefined; options: string[] } => {
+  let help = '';
+  // The bound original: asking this way doesn't count as asking for help.
+  showHelp((text) => {
+    help = text;
+  });
+
+  return {
+    usage: help.split('\n').find((line) => line.trim()),
+    options: [
+      ...new Set(
+        [...help.matchAll(/--([a-z][a-z-]+)/g)].map(([, name]) => name),
+      ),
+    ].filter((name) => name !== undefined),
+  };
+};
+
+// yargs would print the command's whole help, then the error, and exit
+// with 1. This says what's wrong and what was probably meant in a few
+// lines, exits with the code for a command line that can't be used, and
+// prints JSON with --json. Naming no command at all still gets the help:
+// that's what was asked for, more or less.
 cli.fail((message, error) => {
   // Something a command threw, not something about the command line.
   if (!message && error) {
@@ -129,10 +165,9 @@ cli.fail((message, error) => {
     throw new Reported();
   }
 
-  // For a command it doesn't know, yargs gives only its suggestion.
-  const said = message.startsWith('Did you mean')
-    ? `Unknown command. ${message}`
-    : message;
+  const { usage, options } = helpFacts();
+  const command = usage ? commandOf(usage) : 'formspree';
+  const said = explain(message, options, usage);
 
   failure.report(
     { json },
@@ -142,14 +177,24 @@ cli.fail((message, error) => {
       next: [
         {
           step: 'see_help',
-          detail: 'Run the command with --help to see what it takes.',
+          detail: 'See what the command takes, with examples.',
+          command: `${command} --help`,
         },
       ],
     },
     () => {
-      cli.showHelp('error');
+      if (namesNoCommand()) {
+        cli.showHelp('error');
+        console.error('');
+        console.error(said);
+        return;
+      }
+      log.error(said);
       console.error('');
-      console.error(said);
+      if (usage && !said.includes(usage)) console.error(`  Usage: ${usage}`);
+      console.error(
+        `  Run ${log.variable(`${command} --help`)} to see what it takes.`,
+      );
     },
   );
   throw new Reported();

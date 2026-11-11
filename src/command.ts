@@ -15,3 +15,19 @@ export type Args<B extends Builder> = ArgumentsCamelCase<Options<B>>;
 
 /** A command, with its handler's arguments taken from its builder. */
 export type Command<B extends Builder> = CommandModule<object, Options<B>>;
+
+/**
+ * A command's builder, with examples added to the end of its help. Each
+ * is a command line and what it does; `$0` stands for `formspree`. Help
+ * is where an agent, which remembers nothing between runs, learns a
+ * command, so every command has some.
+ */
+export const withExamples =
+  <B extends (yargs: Argv) => Argv>(
+    builder: B,
+    examples: ReadonlyArray<readonly [command: string, description: string]>,
+  ) =>
+  (yargs: Argv): ReturnType<B> =>
+    builder(yargs).example(
+      examples.map(([command, description]) => [command, description]),
+    ) as ReturnType<B>;

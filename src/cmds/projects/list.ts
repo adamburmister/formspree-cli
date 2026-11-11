@@ -1,5 +1,6 @@
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as log from '../../log.ts';
 import * as projects from '../../projects.ts';
 import type { ProjectsResponse } from '../../types.ts';
@@ -36,6 +37,12 @@ const handler = v1.run(async (args: Args<typeof builder>) => {
 export const command: Command<typeof builder> = {
   command: 'list',
   describe: 'Lists your projects',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 projects list', 'Lists every project the login or key can see'],
+    [
+      '$0 projects list --account acct_7d3f9a2c8e1b4f6a0c55 --json',
+      "One account's projects, as JSON",
+    ],
+  ]),
   handler,
 };

@@ -14,6 +14,14 @@ export const command: CommandModule = {
       .command(del)
       .command(get)
       .command(list)
-      .command(rename),
+      .command(rename)
+      .example([
+        ['$0 projects create "Marketing site"', 'Creates a project'],
+        ['$0 projects list --json', 'Lists your projects as JSON'],
+        [
+          '$0 projects delete --help',
+          "Shows one command's options and examples",
+        ],
+      ]),
   handler: () => {},
 };

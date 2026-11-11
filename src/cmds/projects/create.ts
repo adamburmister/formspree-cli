@@ -1,6 +1,7 @@
 import type { Argv } from 'yargs';
 import type { ApiResponse } from '../../api.ts';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as log from '../../log.ts';
 import * as projects from '../../projects.ts';
 import * as prompt from '../../prompt.ts';
@@ -130,6 +131,13 @@ const handler = v1.run(async (args: CreateArgs) => {
 export const command: Command<typeof builder> = {
   command: 'create [name]',
   describe: 'Creates a project',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 projects create', 'Asks for the name, in a terminal'],
+    ['$0 projects create "Marketing site"', 'Creates it without asking'],
+    [
+      '$0 projects create "Marketing site" --account acct_7d3f9a2c8e1b4f6a0c55 --json',
+      'On one account, printing the new project as JSON',
+    ],
+  ]),
   handler,
 };

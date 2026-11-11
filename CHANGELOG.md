@@ -25,6 +25,8 @@
 - `forms add` exits with 1 when the key already exists. It used to print the error and exit with 0.
 - Print JSON by default when an AI agent runs a command, detected from `AI_AGENT` or the agent's own variable. `--no-json` turns it off.
 - `login --json` starts a login for someone else to approve: it prints the link and the code as JSON and returns, and `login --complete` finishes it. For agents, which have no browser.
+- Every command's `--help` ends with examples, and help that's piped isn't wrapped, so an example's command stays on one line.
+- A mistyped option, an unknown command or a missing argument gets a few lines saying what's wrong and what was probably meant ("Did you mean --email?"), where it got the command's whole help.
 - Print plain text when the output is piped: no banner, version line or borders, with the note about the server on stderr. `FORCE_COLOR=1` keeps the terminal's look.
 - Check for updates in the background, at most once a day and only in a terminal, instead of before every command.
 

@@ -18,6 +18,11 @@ export const command: CommandModule = {
       .command(get)
       .command(list)
       .command(update)
-      .command(validate),
+      .command(validate)
+      .example([
+        ['$0 forms create "Contact" --email you@example.com', 'Creates a form'],
+        ['$0 forms list --json', 'Lists your forms as JSON'],
+        ['$0 forms create --help', "Shows one command's options and examples"],
+      ]),
   handler: () => {},
 };

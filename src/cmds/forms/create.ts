@@ -1,6 +1,7 @@
 import type { Argv } from 'yargs';
 import type { ApiResponse } from '../../api.ts';
 import type { Args, Command } from '../../command.ts';
+import { withExamples } from '../../command.ts';
 import * as forms from '../../forms.ts';
 import * as log from '../../log.ts';
 import * as prompt from '../../prompt.ts';
@@ -158,6 +159,20 @@ const handler = v1.run(async (args: CreateArgs) => {
 export const command: Command<typeof builder> = {
   command: 'create [name]',
   describe: 'Creates a form on Formspree',
-  builder,
+  builder: withExamples(builder, [
+    ['$0 forms create', 'Asks for each value, in a terminal'],
+    [
+      '$0 forms create "Contact" --email you@example.com',
+      'Creates it from the options, with no questions',
+    ],
+    [
+      '$0 forms create "Contact" --project proj_2pn3r0jq7zz0t --app slack --json',
+      'In one project, printing the new form as JSON',
+    ],
+    [
+      '$0 forms create --from contact.json',
+      'Creates it from a JSON file, which can hold field rules',
+    ],
+  ]),
   handler,
 };

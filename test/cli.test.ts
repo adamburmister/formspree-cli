@@ -95,15 +95,79 @@ it.each(['forms', 'projects'])(
 );
 
 it.each([
-  ['a mistyped command', ['logn']],
-  ["a group's mistyped command", ['forms', 'lst']],
-  ['a mistyped option', ['whoami', '--bogus']],
-  ['a missing argument', ['forms', 'get']],
-])('leaves the banner off the help that comes with %s', (_case, args) => {
-  const help = cli(args);
+  ['a mistyped command', ['logn'], 'Unknown command. Did you mean login?'],
+  [
+    "a group's mistyped command",
+    ['forms', 'lst'],
+    'Unknown command. Did you mean list?',
+  ],
+  [
+    'a mistyped option',
+    ['forms', 'create', 'Contact', '--emial', 'you@example.com'],
+    'Unknown argument: emial. Did you mean --email?',
+  ],
+  [
+    'two mistyped options',
+    ['forms', 'create', '--emial', 'a@b.c', '--webhok', 'https://x.example'],
+    'Unknown arguments: emial, webhok. Did you mean --email or --webhook?',
+  ],
+  [
+    'an option that is nothing like one it takes',
+    ['whoami', '--bogus'],
+    'Unknown argument: bogus',
+  ],
+  [
+    'a missing argument',
+    ['forms', 'get'],
+    'Missing an argument: formspree forms get <form>',
+  ],
+])(
+  'says what is wrong with %s in a few lines, not the whole help',
+  (_case, args, said) => {
+    const shown = cli(args).filter((line) => line.trim());
 
-  expect(bannerAt(help)).toBe(-1);
-  expect(help.join('\n')).toContain('Options:');
+    // The error first, then the usage and where to look: nothing more.
+    expect(shown[0]).toBe(`✕ ${said}`);
+    expect(shown.length).toBeLessThanOrEqual(3);
+    expect(shown.at(-1)).toMatch(
+      /^ {2}Run formspree .*--help to see what it takes\.$/,
+    );
+    expect(shown.join('\n')).not.toContain('Options:');
+    expect(bannerAt(cli(args))).toBe(-1);
+  },
+);
+
+it('points at the help of the command that was being run', () => {
+  const shown = cli(['forms', 'create', '--emial', 'x']);
+
+  expect(shown).toContain('  Usage: formspree forms create [name]');
+  expect(shown).toContain(
+    '  Run formspree forms create --help to see what it takes.',
+  );
+});
+
+it.each([
+  [['--help'], 'formspree forms create "Contact" --email you@example.com'],
+  [['forms', '--help'], 'formspree forms list --json'],
+  [['forms', 'create', '--help'], 'formspree forms create --from contact.json'],
+  [['projects', 'delete', '--help'], '--yes --forms'],
+  [['login', '--help'], 'formspree login --complete'],
+  [['open', '--help'], 'formspree open docs'],
+  [['deploy', '--help'], 'formspree deploy -k <deploy-key>'],
+])('gives examples in the help for %j', (args, example) => {
+  const help = cli(args).join('\n');
+
+  expect(help).toContain('Examples:');
+  expect(help).toContain(example);
+});
+
+it('keeps each example on one line when the help is piped', () => {
+  const { stdout } = result(['forms', 'create', '--help'], PIPED);
+
+  // Unwrapped, so the command can be read or copied whole.
+  expect(stdout).toMatch(
+    /^ {2}formspree forms create "Contact" --project proj_2pn3r0jq7zz0t --app slack --json {2,}In one project, printing the new form as JSON$/m,
+  );
 });
 
 it('shows the banner before anything else when logging in', () => {
@@ -228,8 +292,8 @@ it('says a command is unknown, with its suggestion', () => {
   const { code, stderr } = result(['logn']);
 
   expect(code).toBe(2);
-  expect(stderr.trimEnd().split('\n').at(-1)).toBe(
-    'Unknown command. Did you mean login?',
+  expect(stderr.trimStart().split('\n')[0]).toBe(
+    '✕ Unknown command. Did you mean login?',
   );
 });
 
@@ -249,7 +313,8 @@ it('reports a command line it cannot use as JSON with --json', () => {
     next_steps: [
       {
         step: 'see_help',
-        detail: 'Run the command with --help to see what it takes.',
+        detail: 'See what the command takes, with examples.',
+        command: 'formspree forms list --help',
       },
     ],
   });

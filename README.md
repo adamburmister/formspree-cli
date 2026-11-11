@@ -182,6 +182,10 @@ an agent's own variable (`CLAUDECODE`, `CURSOR_AGENT`, `CODEX_SANDBOX`,
 `GEMINI_CLI`, `OPENCODE` and others). A person typing in a terminal gets the
 usual output, even inside an agent's session.
 
+Every command's `--help` ends with examples, which is where an agent learns
+a command. A mistyped option gets a short answer that names the one that was
+probably meant.
+
 An agent has no browser to log in with, so it does it in two steps and hands
 the approval to you:
 
