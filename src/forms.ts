@@ -18,6 +18,7 @@ import type {
   FormSummary,
   Project,
 } from './types.ts';
+import { isObject } from './util.ts';
 import * as v1 from './v1.ts';
 
 /** A form's name, as the lists and questions show it. */
@@ -293,9 +294,17 @@ export const bodyOptions = <T>(yargs: Argv<T>) =>
     })
     .conflicts('from', 'stdin');
 
-/** What makes two actions the same kind: the API takes one of each. */
-const kindOf = (item: ActionInput): string =>
-  'app' in item ? `app:${item.app}` : item.type;
+/**
+ * What makes two actions the same kind: the API takes one of each. It's
+ * undefined for an entry that isn't an action at all, which a file can
+ * hold: that's of no kind, so no flag replaces it, and it's sent on for
+ * the API to refuse.
+ */
+const kindOf = (item: unknown): string | undefined => {
+  if (!isObject(item)) return undefined;
+  if ('app' in item) return `app:${String(item.app)}`;
+  return typeof item.type === 'string' ? item.type : undefined;
+};
 
 /**
  * The request body for a create or update: the --from or --stdin JSON,

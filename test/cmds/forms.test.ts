@@ -356,6 +356,47 @@ describe('forms create', () => {
     expect(process.exitCode).toBe(2);
   });
 
+  it("sends on entries in a file's actions that are not actions, beside a flag's", async () => {
+    login(credentialsFile);
+    answer(
+      422,
+      problem(422, 'Fix the fields listed in errors and try again.', {
+        errors: [{ path: 'actions.0', message: 'Not an action.' }],
+      }),
+    );
+    const from = jsonFile({
+      actions: [null, 'nope', 5, { type: 'email', to: 'file@acme.example' }],
+    });
+
+    await run(create, { from, email: ['flag@acme.example'], json: true });
+
+    // The flag replaces the file's email action. What isn't an action is
+    // of no kind, so it's left for the API to refuse, not tripped over.
+    expect(requests()[0]?.data).toEqual({
+      actions: [null, 'nope', 5, { type: 'email', to: ['flag@acme.example'] }],
+    });
+    expect(JSON.parse(output(console.log)).errors).toEqual([
+      { path: 'actions.0', message: 'Not an action.' },
+    ]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("leaves a file's action with no usable type where it is", async () => {
+    login(credentialsFile);
+    answer(200, { form, next_steps: nextSteps });
+    const from = jsonFile({ actions: [{ type: 7 }, { to: 'x@acme.example' }] });
+
+    await run(create, { from, webhook: 'https://hooks.example/formspree' });
+
+    expect(requests()[0]?.data).toEqual({
+      actions: [
+        { type: 7 },
+        { to: 'x@acme.example' },
+        { type: 'webhook', url: 'https://hooks.example/formspree' },
+      ],
+    });
+  });
+
   it('refuses a --from file that is not there', async () => {
     login(credentialsFile);
 
