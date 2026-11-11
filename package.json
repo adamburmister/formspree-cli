@@ -16,50 +16,52 @@
   },
   "license": "MIT",
   "author": "Derrick Reimer",
-  "type": "module",
   "bin": {
-    "formspree": "dist/cli.js"
+    "formspree": "bin/formspree"
   },
   "files": [
-    "dist"
+    "src"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "dev": "node src/cli.ts",
-    "format": "prettier --write .",
-    "prepack": "npm run build",
-    "prepare": "husky || true",
     "release": "np",
-    "test": "vitest run",
-    "typecheck": "tsc"
+    "test": "jest"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
   },
   "lint-staged": {
-    "*.{ts,js,json,md,yml}": "prettier --write",
-    "package.json": "sort-package-json"
+    "*.{js,css,json,md}": [
+      "npx prettier --write",
+      "git add"
+    ],
+    "package.json": [
+      "npx sort-package-json",
+      "git add"
+    ]
   },
   "dependencies": {
-    "@clack/prompts": "^1.9.0",
     "@formspree/deploy": "^0.3.4",
-    "axios": "^1.21.1",
-    "chalk": "^6.0.1",
-    "common-tags": "^1.8.2",
-    "dotenv": "^18.0.10",
-    "yargs": "^18.2.0"
+    "axios": "^0.21.1",
+    "chalk": "^2.4.2",
+    "common-tags": "^1.8.0",
+    "dotenv": "^8.2.0",
+    "execa": "^2.1.0",
+    "ora": "^4.1.1",
+    "pacote": "^11.1.14",
+    "yargs": "^15.4.1"
   },
   "devDependencies": {
-    "@types/common-tags": "^1.8.4",
-    "@types/node": "^24.19.2",
-    "@types/yargs": "^17.0.35",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.6.0",
-    "np": "^12.1.1",
-    "prettier": "^3.9.10",
-    "sort-package-json": "^4.1.0",
-    "typescript": "^7.0.2",
-    "vitest": "^5.1.0"
+    "husky": "^3.1.0",
+    "jest": "^26.6.3",
+    "lint-staged": "^9.5.0",
+    "np": "^6.5.0",
+    "prettier": "^1.19.1",
+    "sort-package-json": "^1.48.1"
   },
   "engines": {
-    "node": ">= 24"
+    "node": ">= 10.12"
   },
   "publishConfig": {
     "access": "public"
