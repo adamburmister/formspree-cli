@@ -111,7 +111,9 @@ const label = (name: string): string =>
 
 const control = (name: string, rules: FieldRules): string => {
   const required = rules.required ? ' required' : '';
-  if (name === 'message') {
+  // A message is free text, unless the form's rules give it another type:
+  // a file, say, which a textarea couldn't send.
+  if (name === 'message' && (!rules.type || rules.type === 'text')) {
     return `<textarea name="message"${required}></textarea>`;
   }
   const type = (rules.type && INPUT_TYPES[rules.type]) || 'text';

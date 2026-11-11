@@ -564,6 +564,32 @@ describe('forms create, showing how to use the form', () => {
     expect(shown).toContain('<textarea name="message"></textarea>');
   });
 
+  it('gives the message an input of its own type when its rules name one', async () => {
+    const fields = { message: { type: 'file', required: true } };
+    answer(200, { form: { ...form, fields }, next_steps: nextSteps });
+
+    await run(create, { name: 'Contact form' });
+
+    const shown = output(console.log);
+    // A textarea couldn't upload it.
+    expect(shown).toContain(
+      'Your message:\n      <input type="file" name="message" required>',
+    );
+    expect(shown).not.toContain('<textarea');
+    expect(shown).toContain('  enctype="multipart/form-data"');
+  });
+
+  it('keeps the message a textarea when its rules say it is text', async () => {
+    const fields = { message: { type: 'text', required: true } };
+    answer(200, { form: { ...form, fields }, next_steps: nextSteps });
+
+    await run(create, { name: 'Contact form' });
+
+    expect(output(console.log)).toContain(
+      '<textarea name="message" required></textarea>',
+    );
+  });
+
   it('adds no enctype without a file field', async () => {
     answer(200, { form, next_steps: nextSteps });
 
