@@ -1,0 +1,10 @@
+{
+  // Builds what is published: src/*.ts to dist/*.js.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
