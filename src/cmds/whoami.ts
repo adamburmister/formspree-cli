@@ -1,66 +1,51 @@
 import chalk from 'chalk';
 import type { Argv } from 'yargs';
+import * as accounts from '../accounts.ts';
 import * as api from '../api.ts';
 import type { Args, Command } from '../command.ts';
 import * as log from '../log.ts';
-import * as messages from '../messages.ts';
 import * as oauth from '../oauth.ts';
 import type { AccountsResponse } from '../types.ts';
+import * as v1 from '../v1.ts';
 
-const builder = (yargs: Argv) =>
-  yargs.option('key', {
-    alias: 'k',
-    type: 'string',
-    describe: 'API key to use instead of your login (or set FORMSPREE_API_KEY)',
-  });
+const builder = (yargs: Argv) => v1.options(yargs);
 
-const handler = async (args: Args<typeof builder>): Promise<void> => {
+const handler = v1.run(async (args: Args<typeof builder>) => {
+  // Whether there's a login is the answer here, so none is offered.
+  const response = await v1.call<AccountsResponse>(
+    args,
+    { method: 'get', path: '/api/v1/accounts' },
+    { asksToLogIn: false },
+  );
+  if (!response) return;
+
   const endpoint = oauth.endpoint();
-  const key = api.apiKey(args.key);
+  const credential = api.apiKey(args.key) ? 'api_key' : 'login';
 
-  messages.usingEndpoint(endpoint);
-
-  try {
-    const response = await api.request<AccountsResponse>(
-      endpoint,
-      { method: 'get', path: '/api/v1/accounts' },
-      { key },
+  if (args.json) {
+    // The API's answer, with what only the CLI knows: which server it's
+    // talking to, and what it's signing requests with.
+    console.log(
+      JSON.stringify({ endpoint, credential, ...response.data }, null, 2),
     );
-
-    if (response.status !== 200) {
-      log.error(`Request failed ${chalk.gray(`(${response.status})`)}`);
-      process.exitCode = 1;
-      return;
-    }
-
-    log.success(
-      key ? `Using an API key for ${endpoint}` : `Logged in to ${endpoint}`,
-    );
-    console.log('');
-    for (const account of response.data.accounts) {
-      console.log(
-        `  ${account.name || 'Personal account'} ${chalk.gray(
-          `(${account.kind}, ${account.id})`,
-        )}`,
-      );
-    }
-    console.log('');
-  } catch (error) {
-    if (error instanceof api.LoginRequired) {
-      messages.loginRequired(error.message);
-    } else if (error instanceof api.InvalidKey) {
-      log.error(error.message);
-      log.meta(
-        `Check the ${log.variable('--key')} flag or the ${log.variable(
-          'FORMSPREE_API_KEY',
-        )} env variable.`,
-      );
-    } else {
-      log.error('Request failed unexpectedly');
-    }
-    process.exitCode = 1;
+    return;
   }
-};
+
+  log.success(
+    credential === 'api_key'
+      ? `Using an API key for ${endpoint}`
+      : `Logged in to ${endpoint}`,
+  );
+  console.log('');
+  for (const account of response.data.accounts) {
+    console.log(
+      `  ${accounts.name(account)} ${chalk.gray(
+        `(${account.kind}, ${account.id})`,
+      )}`,
+    );
+  }
+  console.log('');
+});
 
 export const command: Command<typeof builder> = {
   command: 'whoami',

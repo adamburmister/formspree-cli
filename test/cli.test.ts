@@ -114,6 +114,66 @@ it('leaves other commands without the banner', () => {
   expect(whoami.join('\n')).toContain('Formspree CLI v');
 });
 
+/** Runs the real CLI. Returns its exit code and both streams, apart. */
+const result = (args: string[]) => {
+  const { cwd, env } = sandbox();
+  const run = spawnSync(
+    process.execPath,
+    [CLI, ...args, '--skip-version-check'],
+    { cwd, env, encoding: 'utf8' },
+  );
+  return { code: run.status, stdout: run.stdout, stderr: plain(run.stderr) };
+};
+
+it('exits with 2 for a command line it cannot use', () => {
+  const { code, stdout, stderr } = result(['whoami', '--bogus']);
+
+  expect(code).toBe(2);
+  expect(stdout).toBe('');
+  expect(stderr).toContain('Unknown argument: bogus');
+});
+
+it('says a command is unknown, with its suggestion', () => {
+  const { code, stderr } = result(['logn']);
+
+  expect(code).toBe(2);
+  expect(stderr.trimEnd().split('\n').at(-1)).toBe(
+    'Unknown command. Did you mean login?',
+  );
+});
+
+it('reports a command line it cannot use as JSON with --json', () => {
+  const { code, stdout, stderr } = result([
+    'forms',
+    'list',
+    '--bogus',
+    '--json',
+  ]);
+
+  expect(JSON.parse(stdout)).toEqual({
+    ok: false,
+    error: { code: 'INVALID_USAGE', message: 'Unknown argument: bogus' },
+    detail: 'Unknown argument: bogus',
+    retryable: false,
+    next_steps: [
+      {
+        step: 'see_help',
+        detail: 'Run the command with --help to see what it takes.',
+      },
+    ],
+  });
+  // No help text for a script to wade through.
+  expect(stderr).toBe('');
+  expect(code).toBe(2);
+});
+
+it('exits with 4, as JSON with --json, when there is no login', () => {
+  const { code, stdout } = result(['forms', 'list', '--json']);
+
+  expect(JSON.parse(stdout).error.code).toBe('NOT_LOGGED_IN');
+  expect(code).toBe(4);
+});
+
 it('refuses an option it does not know, rather than dropping it', () => {
   const create = cli([
     'forms',

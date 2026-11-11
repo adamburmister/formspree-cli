@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import * as log from './log.ts';
 import { errorCode } from './util.ts';
 
 /** A local formspree.json. */
@@ -17,7 +16,6 @@ export const readConfig = (file: string): SiteConfig => {
     return JSON.parse(fs.readFileSync(file, 'utf8')) as SiteConfig;
   } catch (error) {
     if (errorCode(error) === 'ENOENT') return {};
-    log.error('formspree.json could not be parsed');
     throw error;
   }
 };

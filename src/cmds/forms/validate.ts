@@ -53,6 +53,7 @@ const submission = (args: ValidateArgs): Record<string, unknown> => {
     if (at < 1) {
       throw new v1.UsageError(
         `${pair} is not a name=value pair, like email=ada@example.com`,
+        { code: 'INVALID_INPUT' },
       );
     }
     const name = pair.slice(0, at);

@@ -190,6 +190,16 @@ const agreed = async (
     if (inside.length && !args.forms) {
       throw new v1.UsageError(
         `Project ${target.title} has ${count(inside)}. Pass --forms to delete them and their submissions too`,
+        {
+          code: 'CONFIRMATION_REQUIRED',
+          next: [
+            {
+              step: 'confirm_forms',
+              detail:
+                "Run the command again with --yes --forms. The project's forms and their submissions are deleted for good.",
+            },
+          ],
+        },
       );
     }
     return true;
@@ -230,11 +240,31 @@ const handler = v1.run(async (args: DeleteArgs) => {
   if (args.project === undefined && (args.json || !attended)) {
     throw new v1.UsageError(
       'Say which project to delete: formspree projects delete <project>',
+      {
+        code: 'MISSING_ARGUMENT',
+        next: [
+          {
+            step: 'list_projects',
+            detail: 'List the projects to find the one to delete, by its id.',
+            command: 'formspree projects list --json',
+          },
+        ],
+      },
     );
   }
   if (!args.yes && !attended) {
     throw new v1.UsageError(
       'Pass --yes to delete a project when nobody can confirm it',
+      {
+        code: 'CONFIRMATION_REQUIRED',
+        next: [
+          {
+            step: 'confirm',
+            detail:
+              'Run the command again with --yes. The project is deleted for good.',
+          },
+        ],
+      },
     );
   }
 

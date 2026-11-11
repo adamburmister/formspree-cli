@@ -1,16 +1,24 @@
-import type { CommandModule } from 'yargs';
+import type { Argv } from 'yargs';
+import type { Args, Command } from '../command.ts';
 import * as credentials from '../credentials.ts';
+import * as failure from '../failure.ts';
 import * as log from '../log.ts';
 import * as messages from '../messages.ts';
 import * as oauth from '../oauth.ts';
 import { OAuthError } from '../oauth.ts';
 
-const handler = async (): Promise<void> => {
+const builder = (yargs: Argv) =>
+  yargs.option('json', {
+    type: 'boolean',
+    describe: 'Print whether a login was removed, as JSON',
+  });
+
+const handler = async (args: Args<typeof builder>): Promise<void> => {
   const endpoint = oauth.endpoint();
   let found = false;
   let revokeFailed = false;
 
-  messages.usingEndpoint(endpoint);
+  messages.usingEndpoint(endpoint, { stderr: args.json });
 
   try {
     // Revoke under the lock, so a concurrent refresh can't rotate the
@@ -35,30 +43,52 @@ const handler = async (): Promise<void> => {
       return null;
     });
   } catch {
-    log.error('Logout failed unexpectedly');
-    process.exitCode = 1;
+    failure.report(args, {
+      code: 'LOGOUT_FAILED',
+      message: 'Logout failed unexpectedly',
+    });
     return;
   }
 
   if (!found) {
-    log.meta(`Not logged in to ${endpoint}`);
+    if (args.json) {
+      console.log(JSON.stringify({ logged_out: false, endpoint }, null, 2));
+    } else {
+      log.meta(`Not logged in to ${endpoint}`);
+    }
     return;
   }
 
   if (revokeFailed) {
-    log.error('Logged out, but the login could not be revoked');
-    log.meta(
-      'Revoke "Formspree CLI" under Connected apps in your account settings.',
+    const fix =
+      'Revoke "Formspree CLI" under Connected apps in your account settings.';
+    failure.report(
+      args,
+      {
+        code: 'REVOKE_FAILED',
+        message: 'Logged out, but the login could not be revoked',
+        next: [{ step: 'revoke_in_dashboard', detail: fix }],
+        // The stored login is gone all the same.
+        extra: { logged_out: true, endpoint },
+      },
+      () => {
+        log.error('Logged out, but the login could not be revoked');
+        log.meta(fix);
+      },
     );
-    process.exitCode = 1;
     return;
   }
 
-  log.success(`Logged out of ${endpoint}`);
+  if (args.json) {
+    console.log(JSON.stringify({ logged_out: true, endpoint }, null, 2));
+  } else {
+    log.success(`Logged out of ${endpoint}`);
+  }
 };
 
-export const command: CommandModule = {
+export const command: Command<typeof builder> = {
   command: 'logout',
   describe: 'Logs out and revokes the stored token',
+  builder,
   handler,
 };

@@ -37,6 +37,16 @@ const pick = async (args: DeleteArgs): Promise<Target | undefined> => {
   if (args.json || !prompt.interactive()) {
     throw new v1.UsageError(
       'Say which form to delete: formspree forms delete <form>',
+      {
+        code: 'MISSING_ARGUMENT',
+        next: [
+          {
+            step: 'list_forms',
+            detail: 'List the forms to find the one to delete, by its hashid.',
+            command: 'formspree forms list --json',
+          },
+        ],
+      },
     );
   }
 
@@ -68,6 +78,16 @@ const handler = v1.run(async (args: DeleteArgs) => {
     if (!prompt.interactive()) {
       throw new v1.UsageError(
         'Pass --yes to delete a form when nobody can confirm it',
+        {
+          code: 'CONFIRMATION_REQUIRED',
+          next: [
+            {
+              step: 'confirm',
+              detail:
+                'Run the command again with --yes. The form and its submissions are deleted for good.',
+            },
+          ],
+        },
       );
     }
     const agreed = await prompt.session((p) =>

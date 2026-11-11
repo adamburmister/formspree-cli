@@ -137,7 +137,7 @@ describe('projects list', () => {
 
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('formspree login');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 
   it("shows the server's reason when a key is rejected", async () => {
@@ -148,7 +148,7 @@ describe('projects list', () => {
     expect(output(console.error)).toContain('This API key was revoked.');
     expect(output(console.error)).toContain('FORMSPREE_API_KEY');
     expect(output(console.error)).not.toContain('formspree login');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 
   it('prints the refusal of a key as JSON with --json', async () => {
@@ -159,7 +159,7 @@ describe('projects list', () => {
 
     expect(JSON.parse(output(console.log))).toEqual(refusal);
     expect(console.error).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 
   it('prints the refusal of a login as JSON with --json', async () => {
@@ -173,7 +173,7 @@ describe('projects list', () => {
     expect(request).toHaveBeenCalledTimes(2);
     expect(JSON.parse(output(console.log))).toEqual(refusal);
     expect(console.error).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 
   it('prints the refusal as JSON with --json when the login cannot be refreshed', async () => {
@@ -187,7 +187,7 @@ describe('projects list', () => {
     expect(request).toHaveBeenCalledTimes(1);
     expect(JSON.parse(output(console.log))).toEqual(refusal);
     expect(console.error).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 
   it('asks to log in again, without --json, when the login cannot be refreshed', async () => {
@@ -202,16 +202,57 @@ describe('projects list', () => {
       'Your login has expired or was revoked',
     );
     expect(output(console.error)).toContain('formspree login');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 
-  it('keeps stdout empty with --json when a refused key gets no problem back', async () => {
+  it('says so as JSON with --json when a refused key gets no problem back', async () => {
     answer(401, '');
 
     await run(list, { key: 'fsk_revoked', json: true });
 
-    expect(console.log).not.toHaveBeenCalled();
-    expect(output(console.error)).toContain('The API key was not accepted');
+    // The CLI's own failure, in the shape of the API's problems.
+    expect(JSON.parse(output(console.log))).toEqual({
+      ok: false,
+      error: { code: 'INVALID_KEY', message: 'The API key was not accepted' },
+      detail: 'The API key was not accepted',
+      retryable: false,
+      next_steps: [
+        {
+          step: 'check_key',
+          detail: 'Check the --key flag or the FORMSPREE_API_KEY env variable.',
+        },
+      ],
+    });
+    expect(console.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(4);
+  });
+
+  it('says there is no login as JSON with --json, with the command to run', async () => {
+    await run(list, { json: true });
+
+    const printed = JSON.parse(output(console.log));
+    expect(printed.error).toEqual({
+      code: 'NOT_LOGGED_IN',
+      message: 'Not logged in',
+    });
+    expect(printed.next_steps[0].command).toBe('formspree login');
+    expect(console.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(4);
+  });
+
+  it('says so as JSON with --json when the server cannot be reached', async () => {
+    login(credentialsFile);
+    request.mockRejectedValue(
+      Object.assign(new Error('connect'), { code: 'ECONNREFUSED' }),
+    );
+
+    await run(list, { json: true });
+
+    const printed = JSON.parse(output(console.log));
+    expect(printed.error.code).toBe('REQUEST_FAILED');
+    expect(printed.detail).toContain('ECONNREFUSED');
+    // Nothing reached the API: the same command can be tried again.
+    expect(printed.retryable).toBe(true);
     expect(process.exitCode).toBe(1);
   });
 
@@ -278,7 +319,7 @@ describe('projects get', () => {
     expect(shown).toContain('(404)');
     // A step with no link is written for API callers, not CLI users.
     expect(shown).not.toContain('GET /api/v1/projects');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(3);
   });
 
   it('escapes an id before it goes in the path', async () => {
@@ -439,8 +480,15 @@ describe('projects create', () => {
 
     await run(create, { name: 'Marketing site', json: true });
 
-    expect(output(console.error)).toContain('Request failed (405)');
-    expect(console.log).not.toHaveBeenCalled();
+    // No JSON came back, so the CLI says what it can as its own failure.
+    expect(JSON.parse(output(console.log))).toEqual({
+      ok: false,
+      error: { code: 'REQUEST_FAILED', message: 'Request failed (405)' },
+      detail: 'Request failed (405)',
+      retryable: false,
+      status: 405,
+    });
+    expect(console.error).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
 });
@@ -789,7 +837,7 @@ describe('projects delete', () => {
 
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('--yes');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
   });
 
   it('asks before deleting an empty project', async () => {
@@ -854,7 +902,7 @@ describe('projects delete', () => {
     expect(sent()).toEqual(['get /api/v1/projects/nope', 'get /api/v1/forms']);
     expect(output(console.error)).toContain('Nothing with that id exists.');
     expect(output(console.log)).not.toContain('Project deleted');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(3);
   });
 
   describe('when the project has forms', () => {
@@ -921,7 +969,7 @@ describe('projects delete', () => {
       expect(sent()).toEqual([`get ${PROJECT}`, 'get /api/v1/forms']);
       expect(output(console.error)).toContain(`Project ${TITLE} has 2 forms`);
       expect(output(console.error)).toContain('--forms');
-      expect(process.exitCode).toBe(1);
+      expect(process.exitCode).toBe(2);
     });
 
     it('deletes the forms and the project with --yes --forms', async () => {
@@ -1161,9 +1209,23 @@ describe('projects delete', () => {
       expect(process.exitCode).toBe(1);
     });
 
+    it('says so as JSON with --json, with how to find the id', async () => {
+      serve(listed());
+
+      await run(del, { json: true });
+
+      expect(request).not.toHaveBeenCalled();
+      const printed = JSON.parse(output(console.log));
+      expect(printed.error.code).toBe('MISSING_ARGUMENT');
+      expect(printed.next_steps[0].command).toBe(
+        'formspree projects list --json',
+      );
+      expect(console.error).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
+    });
+
     it.each([
       ['nobody is at a terminal', {}, false],
-      ['--json is given', { json: true }, true],
       ['--yes is given off a terminal', { yes: true }, false],
     ])('asks for the id instead when %s', async (_case, args, tty) => {
       serve(listed());
@@ -1177,7 +1239,7 @@ describe('projects delete', () => {
       expect(output(console.error)).toContain(
         'formspree projects delete <project>',
       );
-      expect(process.exitCode).toBe(1);
+      expect(process.exitCode).toBe(2);
     });
   });
 });
@@ -1279,7 +1341,7 @@ describe('a command that finds no login, in a terminal', () => {
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('Not logged in');
     expect(output(console.error)).toContain('formspree login');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 
   it('stops with the exit code of an interrupt on Ctrl+C', async () => {
@@ -1359,13 +1421,16 @@ describe('a command that finds no login, in a terminal', () => {
 
       expect(asked).toEqual([]);
       expect(post).not.toHaveBeenCalled();
-      expect(process.exitCode).toBe(1);
+      expect(process.exitCode).toBe(4);
     };
 
     it('with --json', async () => {
       await refused({ json: true });
 
-      expect(output(console.error)).toContain('formspree login');
+      // It says how to log in, as JSON, and leaves it there.
+      const printed = JSON.parse(output(console.log));
+      expect(printed.error.code).toBe('NOT_LOGGED_IN');
+      expect(printed.next_steps[0].command).toBe('formspree login');
     });
 
     it('off a terminal', async () => {

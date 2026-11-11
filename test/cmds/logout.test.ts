@@ -129,3 +129,42 @@ it('ignores an --endpoint flag', async () => {
   expect(stored()[ENDPOINT]).toBeUndefined();
   expect(stored()[OTHER]).toEqual(entry('9'));
 });
+
+it('says a login was removed as JSON with --json', async () => {
+  post.mockImplementation(() => response(200, ''));
+
+  await run(cmd, { json: true });
+
+  expect(JSON.parse(output(console.log))).toEqual({
+    logged_out: true,
+    endpoint: 'https://formspree.io',
+  });
+  expect(console.error).not.toHaveBeenCalled();
+  expect(process.exitCode).toBeUndefined();
+});
+
+it('says there was no login as JSON with --json, without failing', async () => {
+  fs.writeFileSync(credentialsFile, JSON.stringify({}));
+
+  await run(cmd, { json: true });
+
+  expect(JSON.parse(output(console.log))).toEqual({
+    logged_out: false,
+    endpoint: 'https://formspree.io',
+  });
+  expect(process.exitCode).toBeUndefined();
+});
+
+it('says the login was removed but not revoked as JSON with --json', async () => {
+  post.mockImplementation(() => response(500, ''));
+
+  await run(cmd, { json: true });
+
+  const printed = JSON.parse(output(console.log));
+  expect(printed.error.code).toBe('REVOKE_FAILED');
+  // The stored login is gone all the same.
+  expect(printed.logged_out).toBe(true);
+  expect(printed.next_steps[0].step).toBe('revoke_in_dashboard');
+  expect(stored()[ENDPOINT]).toBeUndefined();
+  expect(process.exitCode).toBe(1);
+});

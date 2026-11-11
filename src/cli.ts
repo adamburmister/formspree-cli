@@ -10,6 +10,7 @@ import { command as logout } from './cmds/logout.ts';
 import { command as open } from './cmds/open.ts';
 import { command as projects } from './cmds/projects.ts';
 import { command as whoami } from './cmds/whoami.ts';
+import * as failure from './failure.ts';
 import * as log from './log.ts';
 import { version } from './version.ts';
 import { versionCheck } from './version_check.ts';
@@ -95,4 +96,51 @@ cli.showHelp = (level?: string | ((message: string) => void)) => {
   return level === undefined ? showHelp() : showHelp(level);
 };
 
-await cli.parse();
+/** Thrown out of yargs once what it refused has been reported. */
+class Reported extends Error {}
+
+// With --json, a command line yargs refuses is reported as JSON too.
+const json = argv.includes('--json');
+
+// yargs would print its help and the error and exit with 1. This does
+// the same with the exit code for a command line that can't be used,
+// and as JSON with --json.
+cli.fail((message, error) => {
+  // Something a command threw, not something about the command line.
+  if (!message && error) {
+    if (!json) throw error;
+    failure.report({ json }, { code: 'UNEXPECTED', message: error.message });
+    throw new Reported();
+  }
+
+  // For a command it doesn't know, yargs gives only its suggestion.
+  const said = message.startsWith('Did you mean')
+    ? `Unknown command. ${message}`
+    : message;
+
+  failure.report(
+    { json },
+    {
+      code: 'INVALID_USAGE',
+      message: said,
+      next: [
+        {
+          step: 'see_help',
+          detail: 'Run the command with --help to see what it takes.',
+        },
+      ],
+    },
+    () => {
+      cli.showHelp('error');
+      console.error('');
+      console.error(said);
+    },
+  );
+  throw new Reported();
+});
+
+try {
+  await cli.parse();
+} catch (error) {
+  if (!(error instanceof Reported)) throw error;
+}

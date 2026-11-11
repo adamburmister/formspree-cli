@@ -136,7 +136,7 @@ describe('open', () => {
 
     expect(browser.open).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('Nothing with that id exists.');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(3);
   });
 
   it('prints the link alone with --url, and opens nothing', async () => {

@@ -157,13 +157,57 @@ It exits with 1 when the submission isn't valid.
 - The creates only ask questions in a terminal. With piped input, `--json`,
   `--no-interactive` or any option that sets a form's contents, they ask
   nothing and use what they were given.
-- `--json` prints the API's response, and nothing else, on stdout. When the API
-  refuses a request the response is its error, and the exit code is 1.
+- `--json` prints the result as JSON, and nothing else, on stdout. Every
+  command takes it except `login`. For the commands that call the API the
+  result is the API's response.
 - A command never offers to log in with piped input or `--json`. With no
-  login it prints how to get one and exits with 1.
+  login it says how to get one and exits with 4.
 - `--idempotency-key <key>` on `projects create` and `forms create` makes a
   retry safe: for 24 hours, the same key with the same options returns the
   first result instead of creating again.
+
+#### Exit codes
+
+| Code | Meaning                                                              |
+| ---- | -------------------------------------------------------------------- |
+| 0    | It worked.                                                           |
+| 1    | It failed: the API refused the request, or something broke.          |
+| 2    | The command line can't be used as given. Fix it and run it again.    |
+| 3    | Not found: the API has nothing with that id that this login can see. |
+| 4    | No login or key, or one the API won't take.                          |
+| 130  | Stopped with Ctrl+C.                                                 |
+
+#### Errors with `--json`
+
+With `--json` a failure is JSON on stdout too, with the exit code above. When
+the API refused the request, it's the API's own error as it came. When the CLI
+stopped the command itself, it's the same shape, so one reader handles both:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "CONFIRMATION_REQUIRED",
+    "message": "Pass --yes to delete a form when nobody can confirm it"
+  },
+  "detail": "Pass --yes to delete a form when nobody can confirm it",
+  "retryable": false,
+  "next_steps": [
+    {
+      "step": "confirm",
+      "detail": "Run the command again with --yes. The form and its submissions are deleted for good."
+    }
+  ]
+}
+```
+
+- `error.code` is a stable name to branch on. The CLI's own are
+  `INVALID_USAGE`, `MISSING_ARGUMENT`, `CONFIRMATION_REQUIRED`,
+  `INVALID_INPUT`, `NOT_LOGGED_IN`, `INVALID_KEY` and `REQUEST_FAILED`, plus a
+  few for `deploy`, `logout` and the local `formspree.json`.
+- `retryable` says whether the same command can succeed later, unchanged.
+- A step in `next_steps` has a `command` when it's a command to run as it
+  stands, like `formspree login`. It never repeats what you typed.
 
 ## Development
 

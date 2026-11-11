@@ -19,6 +19,10 @@
 - A command that needs a login and finds none offers to log in, in a terminal, then carries on.
 - Logging in opens the link in your browser as well as printing it. `login --no-browser` only prints it.
 - Refuse an option or command the CLI doesn't know, instead of ignoring it.
+- Add `--json` to `whoami`, `logout`, `init`, `deploy` and `forms add`.
+- With `--json`, every failure is JSON on stdout: the API's error as it came, or the CLI's own in the same shape, with a stable `error.code` and the next steps to take.
+- Exit with 2 for a command line that can't be used, 3 for not found, and 4 for a missing or refused login or key. Other failures still exit with 1.
+- `forms add` exits with 1 when the key already exists. It used to print the error and exit with 0.
 - Check for updates in the background, at most once a day and only in a terminal, instead of before every command.
 
 ## 0.9.0

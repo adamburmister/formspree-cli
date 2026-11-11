@@ -1,18 +1,36 @@
 import { writeFile } from 'node:fs/promises';
-import type { CommandModule } from 'yargs';
+import type { Argv } from 'yargs';
+import type { Args, Command } from '../command.ts';
 import * as log from '../log.ts';
 import { errorCode } from '../util.ts';
 
-export const command: CommandModule = {
+const FILE = 'formspree.json';
+
+const builder = (yargs: Argv) =>
+  yargs.option('json', {
+    type: 'boolean',
+    describe: 'Print whether the file was created, as JSON',
+  });
+
+const handler = async (args: Args<typeof builder>): Promise<void> => {
+  let created = true;
+  try {
+    await writeFile(FILE, '{}', { flag: 'wx' });
+  } catch (error) {
+    if (errorCode(error) !== 'EEXIST') throw error;
+    created = false;
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify({ created, file: FILE }, null, 2));
+  } else {
+    log.success(created ? `${FILE} created` : `${FILE} already exists`);
+  }
+};
+
+export const command: Command<typeof builder> = {
   command: 'init',
   describe: 'Creates a formspree.json file',
-  handler: async () => {
-    try {
-      await writeFile('formspree.json', '{}', { flag: 'wx' });
-      log.success('formspree.json created');
-    } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error;
-      log.success('formspree.json already exists');
-    }
-  },
+  builder,
+  handler,
 };

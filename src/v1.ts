@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import chalk from 'chalk';
 import type { Argv } from 'yargs';
 import * as api from './api.ts';
+import * as failure from './failure.ts';
+import type { Failure } from './failure.ts';
+import { UsageError } from './failure.ts';
 import type { ApiRequest, ApiResponse } from './api.ts';
 import * as log from './log.ts';
 import { logIn } from './login.ts';
@@ -11,13 +14,7 @@ import * as prompt from './prompt.ts';
 import type { NextStep, Problem } from './types.ts';
 import { errorCode, isObject } from './util.ts';
 
-/** Thrown for input the CLI can't use, before anything is sent. */
-export class UsageError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'UsageError';
-  }
-}
+export { UsageError } from './failure.ts';
 
 /**
  * Thrown to end a command early, once why has been said and the exit code
@@ -176,21 +173,66 @@ const reportProblem = (response: ApiResponse): void => {
   nextSteps(body.next_steps, { linkedOnly: true, stderr: true });
 };
 
-const reportFailure = (error: unknown, endpoint: string): void => {
+/** What there is to do about having no login the API will take. */
+const notLoggedIn = (reason: string): Failure => ({
+  code: 'NOT_LOGGED_IN',
+  message: reason,
+  next: [
+    {
+      step: 'log_in',
+      detail:
+        'Run formspree login and approve it in the browser, or set FORMSPREE_API_KEY to an API key.',
+      command: 'formspree login',
+    },
+  ],
+});
+
+/**
+ * Reports a request that got no answer from the API to act on: there was
+ * no credential to send, the key was refused, or the request failed.
+ */
+const reportFailure = (
+  args: CommonArgs,
+  error: unknown,
+  endpoint: string,
+): void => {
   if (error instanceof api.LoginRequired) {
-    messages.loginRequired(error.message);
+    failure.report(args, notLoggedIn(error.message), () =>
+      messages.loginRequired(error.message),
+    );
   } else if (error instanceof api.InvalidKey) {
-    log.error(error.message);
-    detail(
-      `Check the ${log.variable('--key')} flag or the ${log.variable(
-        'FORMSPREE_API_KEY',
-      )} env variable.`,
+    const fix = 'Check the --key flag or the FORMSPREE_API_KEY env variable.';
+    failure.report(
+      args,
+      {
+        code: 'INVALID_KEY',
+        message: error.message,
+        next: [{ step: 'check_key', detail: fix }],
+      },
+      () => {
+        log.error(error.message);
+        detail(
+          `Check the ${log.variable('--key')} flag or the ${log.variable(
+            'FORMSPREE_API_KEY',
+          )} env variable.`,
+        );
+      },
     );
   } else {
     const cause =
       errorCode(error) ?? (error instanceof Error ? error.message : 'error');
-    log.error(
-      `Request failed unexpectedly ${chalk.gray(`(${cause} from ${endpoint})`)}`,
+    failure.report(
+      args,
+      {
+        code: 'REQUEST_FAILED',
+        message: `Request failed unexpectedly (${cause} from ${endpoint})`,
+        // Nothing reached the API, or nothing came back: worth another try.
+        retryable: true,
+      },
+      () =>
+        log.error(
+          `Request failed unexpectedly ${chalk.gray(`(${cause} from ${endpoint})`)}`,
+        ),
     );
   }
 };
@@ -202,17 +244,26 @@ const refusal = (error: unknown): unknown =>
     : undefined;
 
 /**
- * Reports a response the API refused, and sets the exit code. With --json
- * its body goes to stdout as it came, so a script gets the problem's
- * `errors` and `next_steps`.
+ * Reports a response the API refused, and sets the exit code from its
+ * status. With --json its body goes to stdout as it came, so a script
+ * gets the problem's `errors` and `next_steps`. A refusal with no JSON
+ * body, like a proxy's error page, is reported as the CLI's own failures
+ * are.
  */
 export const refused = (args: CommonArgs, response: ApiResponse): void => {
-  process.exitCode = 1;
-  if (args.json && isObject(response.data)) {
+  if (!args.json) {
+    reportProblem(response);
+  } else if (isObject(response.data)) {
     console.log(JSON.stringify(response.data, null, 2));
   } else {
-    reportProblem(response);
+    failure.report(args, {
+      code: 'REQUEST_FAILED',
+      message: `Request failed (${response.status})`,
+      retryable: response.status >= 500,
+      extra: { status: response.status },
+    });
   }
+  process.exitCode = failure.exitForStatus(response.status);
 };
 
 /**
@@ -235,7 +286,7 @@ const offerLogin = async (
   );
   if (!agreed) {
     messages.loginRequired(error.message);
-    process.exitCode = 1;
+    process.exitCode = failure.EXIT.auth;
     throw new Stopped();
   }
 
@@ -269,6 +320,9 @@ let announced: string | null = null;
  *
  * `quiet` keeps stdout for what the command prints itself, as --json
  * does: the note about which server is in use goes to stderr.
+ *
+ * `asksToLogIn: false` is for a command whose answer is whether there's a
+ * login: it reports that there's none, without offering one.
  */
 export const call = async <T>(
   args: CommonArgs,
@@ -279,12 +333,14 @@ export const call = async <T>(
     settled,
     accept,
     quiet = false,
+    asksToLogIn = true,
   }: {
     anonymous?: boolean;
     optional?: boolean;
     settled?: ((response: ApiResponse<T> | null) => void) | undefined;
     accept?: ((response: ApiResponse) => boolean) | undefined;
     quiet?: boolean;
+    asksToLogIn?: boolean;
   } = {},
 ): Promise<ApiResponse<T> | null> => {
   const endpoint = oauth.endpoint();
@@ -308,6 +364,7 @@ export const call = async <T>(
       // With `settled` a spinner is running: no place for a question.
       const offered =
         error instanceof api.LoginRequired &&
+        asksToLogIn &&
         !settled &&
         (await offerLogin(args, error, endpoint));
       if (!offered) throw error;
@@ -319,14 +376,14 @@ export const call = async <T>(
     }
     if (optional) return null;
     settled?.(null);
-    process.exitCode = 1;
     // A refused credential is the API's answer too: with --json it goes
     // to stdout like any other refusal.
     const body = refusal(error);
     if (args.json && isObject(body)) {
+      process.exitCode = failure.EXIT.auth;
       console.log(JSON.stringify(body, null, 2));
     } else {
-      reportFailure(error, endpoint);
+      reportFailure(args, error, endpoint);
     }
     return null;
   }
@@ -373,8 +430,11 @@ export const run =
         // So has whatever stopped the command.
         process.exitCode ??= 1;
       } else if (error instanceof UsageError) {
-        log.error(error.message);
-        process.exitCode = 1;
+        failure.report(args as CommonArgs, {
+          code: error.code,
+          message: error.message,
+          next: error.next,
+        });
       } else {
         throw error;
       }
@@ -388,17 +448,23 @@ export const readJson = (file?: string): Record<string, unknown> => {
   try {
     text = fs.readFileSync(file || 0, 'utf8');
   } catch {
-    throw new UsageError(`${name} could not be read`);
+    throw new UsageError(`${name} could not be read`, {
+      code: 'INVALID_INPUT',
+    });
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new UsageError(`${name} is not valid JSON`);
+    throw new UsageError(`${name} is not valid JSON`, {
+      code: 'INVALID_INPUT',
+    });
   }
   if (!isObject(parsed)) {
-    throw new UsageError(`${name} must hold a JSON object`);
+    throw new UsageError(`${name} must hold a JSON object`, {
+      code: 'INVALID_INPUT',
+    });
   }
   return parsed;
 };

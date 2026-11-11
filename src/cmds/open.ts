@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import type { Argv } from 'yargs';
 import * as browser from '../browser.ts';
 import type { Args, Command } from '../command.ts';
+import * as failure from '../failure.ts';
 import * as forms from '../forms.ts';
 import * as log from '../log.ts';
 import * as oauth from '../oauth.ts';
@@ -51,8 +52,10 @@ const page = async (args: OpenArgs): Promise<string | undefined> => {
 
     const dashboard = response.data.project.links?.dashboard;
     if (!dashboard) {
-      log.error('The API gave no dashboard link for this project');
-      process.exitCode = 1;
+      failure.report(args, {
+        code: 'NO_DASHBOARD_LINK',
+        message: 'The API gave no dashboard link for this project',
+      });
     }
     return dashboard;
   }

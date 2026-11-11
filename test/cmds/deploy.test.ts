@@ -178,3 +178,83 @@ it('skips validating inline secrets with force flag', async () => {
   });
   expect(vi.mocked(console.log).mock.calls).toMatchSnapshot();
 });
+
+// What console.log was given, parsed: the whole of stdout with --json.
+const printed = (): Record<string, unknown> =>
+  JSON.parse(
+    vi
+      .mocked(console.log)
+      .mock.calls.map((args) => args.join(' '))
+      .join('\n'),
+  ) as Record<string, unknown>;
+
+it("prints the deployment's result as JSON with --json", async () => {
+  request.mockImplementation(() =>
+    reply(200, { id: 'xxxx-xxxx-xxxx', log: ['Added contact form'] }),
+  );
+
+  await run(cmd, { config: '{}', key: 'xxx', force: false, json: true });
+
+  expect(printed()).toEqual({
+    id: 'xxxx-xxxx-xxxx',
+    log: ['Added contact form'],
+  });
+  expect(process.exitCode).toBeUndefined();
+});
+
+it("prints the server's validation errors as JSON with --json", async () => {
+  request.mockImplementation(() =>
+    reply(422, {
+      code: 'CONFIG_VALIDATION_ERROR',
+      errors: [{ field: 'name', message: 'is required' }],
+    }),
+  );
+
+  await run(cmd, { config: '{}', key: 'xxx', force: false, json: true });
+
+  expect(printed()).toMatchObject({
+    ok: false,
+    error: { code: 'DEPLOY_FAILED', message: 'Deployment failed' },
+    reason: 'CONFIG_VALIDATION_ERROR',
+    errors: [{ field: 'name', message: 'is required' }],
+  });
+  expect(console.error).not.toHaveBeenCalled();
+  expect(process.exitCode).toBe(1);
+});
+
+it('exits with 4, saying how to set it, when there is no deploy key', async () => {
+  await run(cmd, { config: '{}', force: false, json: true });
+
+  expect(request).not.toHaveBeenCalled();
+  expect(printed()).toMatchObject({
+    error: { code: 'DEPLOY_KEY_REQUIRED' },
+    next_steps: [{ step: 'set_deploy_key' }],
+  });
+  expect(process.exitCode).toBe(4);
+});
+
+it('exits with 4 when the deploy key is refused', async () => {
+  request.mockImplementation(() => reply(401, {}));
+
+  await run(cmd, { config: '{}', key: 'bad', force: false });
+
+  expect(vi.mocked(console.error).mock.calls.flat().join('\n')).toContain(
+    'Deploy key is not valid',
+  );
+  expect(process.exitCode).toBe(4);
+});
+
+it('names the properties that must come from the environment, with --json', async () => {
+  const config = JSON.stringify({ apiKey: 'inline-secret' });
+
+  await run(cmd, { config, key: 'xxx', force: false, json: true });
+
+  expect(request).not.toHaveBeenCalled();
+  expect(printed()).toMatchObject({
+    error: { code: 'CONFIG_INVALID' },
+    properties: ['apiKey'],
+  });
+  // The secret itself is never printed back.
+  expect(JSON.stringify(printed())).not.toContain('inline-secret');
+  expect(process.exitCode).toBe(1);
+});

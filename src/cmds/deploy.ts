@@ -3,6 +3,7 @@ import type { DeployResponse } from '@formspree/deploy';
 import chalk from 'chalk';
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../command.ts';
+import * as failure from '../failure.ts';
 import * as log from '../log.ts';
 import * as messages from '../messages.ts';
 import * as spin from '../spinner.ts';
@@ -66,6 +67,10 @@ const builder = (yargs: Argv) =>
       type: 'string',
       default: 'formspree.json',
       describe: 'Path to the local `formspree.json` file',
+    })
+    .option('json', {
+      type: 'boolean',
+      describe: "Print the deployment's result as JSON",
     });
 
 const handler = async (args: Args<typeof builder>): Promise<void> => {
@@ -73,8 +78,17 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
   const endpoint = args.endpoint || 'https://formspree.io';
 
   if (!rawConfig) {
-    log.error('Configuration not provided');
-    process.exitCode = 1;
+    failure.report(args, {
+      code: 'CONFIG_MISSING',
+      message: 'Configuration not provided',
+      next: [
+        {
+          step: 'create_config',
+          detail: 'Create a formspree.json to deploy.',
+          command: 'formspree init',
+        },
+      ],
+    });
     return;
   }
 
@@ -83,8 +97,10 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
   try {
     parsedRawConfig = JSON.parse(rawConfig);
   } catch {
-    log.error('Configuration could not be parsed');
-    process.exitCode = 1;
+    failure.report(args, {
+      code: 'CONFIG_INVALID',
+      message: 'Configuration could not be parsed',
+    });
     return;
   }
 
@@ -99,15 +115,28 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
   });
 
   if (!args.force && invalidKeys.length > 0) {
-    log.error(
-      `The following properties must reference environment variables: ${invalidKeys.join(
-        ', ',
-      )}`,
+    const message = `The following properties must reference environment variables: ${invalidKeys.join(
+      ', ',
+    )}`;
+    failure.report(
+      args,
+      {
+        code: 'CONFIG_INVALID',
+        message,
+        next: [
+          {
+            step: 'reference_env',
+            detail:
+              'Set each property to $NAME, the name of an environment variable that holds its value. The -f flag overrides this check.',
+          },
+        ],
+        extra: { properties: invalidKeys },
+      },
+      () => {
+        log.error(message);
+        log.meta('To override this, use the `-f` flag.');
+      },
     );
-
-    log.meta('To override this, use the `-f` flag.');
-
-    process.exitCode = 1;
     return;
   }
 
@@ -127,13 +156,13 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
   );
 
   if (undefinedEnvRefs.length > 0) {
-    log.error(
-      `The following environment variables were referenced but are not defined: ${undefinedEnvRefs.join(
+    failure.report(args, {
+      code: 'CONFIG_INVALID',
+      message: `The following environment variables were referenced but are not defined: ${undefinedEnvRefs.join(
         ', ',
       )}`,
-    );
-
-    process.exitCode = 1;
+      extra: { variables: undefinedEnvRefs },
+    });
     return;
   }
 
@@ -142,16 +171,31 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
   try {
     config = JSON.parse(rawConfigWithSecrets);
   } catch {
-    log.error('Configuration could not be parsed');
-    process.exitCode = 1;
+    failure.report(args, {
+      code: 'CONFIG_INVALID',
+      message: 'Configuration could not be parsed',
+    });
     return;
   }
 
   const key = args.key || deployment.getDeployKey(args);
 
   if (!key) {
-    messages.authRequired();
-    process.exitCode = 1;
+    failure.report(
+      args,
+      {
+        code: 'DEPLOY_KEY_REQUIRED',
+        message: 'Deploy key is required',
+        next: [
+          {
+            step: 'set_deploy_key',
+            detail:
+              'Set FORMSPREE_DEPLOY_KEY to the deploy key found under "Settings" in the dashboard, or pass it with -k.',
+          },
+        ],
+      },
+      messages.authRequired,
+    );
     return;
   }
 
@@ -170,6 +214,10 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
 
     switch (response.status) {
       case 200:
+        if (args.json) {
+          console.log(JSON.stringify(response.data, null, 2));
+          return;
+        }
         log.success(
           `Deployment succeeded ${chalk.gray(`(${response.data.id})`)}`,
         );
@@ -177,24 +225,47 @@ const handler = async (args: Args<typeof builder>): Promise<void> => {
         return;
 
       case 401:
-        log.error('Deploy key is not valid');
-        process.exitCode = 1;
+        failure.report(args, {
+          code: 'INVALID_DEPLOY_KEY',
+          message: 'Deploy key is not valid',
+        });
         return;
 
       case 422:
-        log.error('Deployment failed');
-        printErrors(response.data);
-        process.exitCode = 1;
+        failure.report(
+          args,
+          {
+            code: 'DEPLOY_FAILED',
+            message: 'Deployment failed',
+            // What the server found wrong with the configuration.
+            extra: {
+              status: response.status,
+              reason: response.data.code,
+              errors: response.data.errors ?? [],
+            },
+          },
+          () => {
+            log.error('Deployment failed');
+            printErrors(response.data);
+          },
+        );
         return;
 
       default:
-        log.error('Deployment failed');
-        process.exitCode = 1;
+        failure.report(args, {
+          code: 'DEPLOY_FAILED',
+          message: 'Deployment failed',
+          retryable: response.status >= 500,
+          extra: { status: response.status },
+        });
     }
   } catch {
     spinner.clear();
-    log.error('Deployment failed unexpectedly');
-    process.exitCode = 1;
+    failure.report(args, {
+      code: 'DEPLOY_FAILED',
+      message: 'Deployment failed unexpectedly',
+      retryable: true,
+    });
   }
 };
 

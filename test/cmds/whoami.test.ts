@@ -94,13 +94,49 @@ it('lists the accounts the stored token covers', async () => {
   expect(process.exitCode).toBeUndefined();
 });
 
+it('prints the server, the credential and the accounts as JSON with --json', async () => {
+  store({});
+  request.mockImplementation(() =>
+    response(200, {
+      accounts: [{ id: 'acct_1', name: 'Acme', kind: 'team' }],
+    }),
+  );
+
+  await run(cmd, { json: true });
+
+  expect(JSON.parse(output(console.log))).toEqual({
+    endpoint: 'https://formspree.io',
+    credential: 'login',
+    accounts: [{ id: 'acct_1', name: 'Acme', kind: 'team' }],
+  });
+  expect(process.exitCode).toBeUndefined();
+});
+
+it('says an API key is in use with --json', async () => {
+  request.mockImplementation(() => response(200, { accounts: [] }));
+
+  await run(cmd, { key: 'fsk_test', json: true });
+
+  expect(JSON.parse(output(console.log)).credential).toBe('api_key');
+});
+
+it('says there is no login as JSON with --json, and exits with 4', async () => {
+  await run(cmd, { json: true });
+
+  const printed = JSON.parse(output(console.log));
+  expect(printed.error.code).toBe('NOT_LOGGED_IN');
+  expect(printed.next_steps[0].command).toBe('formspree login');
+  expect(console.error).not.toHaveBeenCalled();
+  expect(process.exitCode).toBe(4);
+});
+
 it('asks to log in when there is no stored token', async () => {
   await run(cmd, {});
 
   expect(request).not.toHaveBeenCalled();
   expect(output(console.error)).toContain('Not logged in');
   expect(output(console.error)).toContain('formspree login');
-  expect(process.exitCode).toBe(1);
+  expect(process.exitCode).toBe(4);
 });
 
 it('refreshes an expired token first and saves the rotated pair', async () => {
@@ -157,7 +193,7 @@ it('asks for a fresh login when the grant was revoked', async () => {
   expect(refreshes()).toHaveLength(1);
   expect(bearers()).toEqual(['Bearer fso_access_0']);
   expect(output(console.error)).toContain('formspree login');
-  expect(process.exitCode).toBe(1);
+  expect(process.exitCode).toBe(4);
   expect(stored()).toBeUndefined();
 });
 
@@ -169,7 +205,7 @@ it('asks for a fresh login when an expired token cannot be refreshed', async () 
 
   expect(request).not.toHaveBeenCalled();
   expect(output(console.error)).toContain('formspree login');
-  expect(process.exitCode).toBe(1);
+  expect(process.exitCode).toBe(4);
   expect(stored()).toBeUndefined();
 });
 
@@ -183,7 +219,7 @@ it('asks for a fresh login when the refreshed token is refused too', async () =>
   expect(refreshes()).toHaveLength(1);
   expect(bearers()).toEqual(['Bearer fso_access_0', 'Bearer fso_access_1']);
   expect(output(console.error)).toContain('formspree login');
-  expect(process.exitCode).toBe(1);
+  expect(process.exitCode).toBe(4);
 });
 
 describe('when several CLI processes share the credentials', () => {
@@ -236,7 +272,7 @@ it('asks for a fresh login when the client is no longer recognized', async () =>
 
   expect(request).not.toHaveBeenCalled();
   expect(output(console.error)).toContain('formspree login');
-  expect(process.exitCode).toBe(1);
+  expect(process.exitCode).toBe(4);
   expect(stored()).toBeUndefined();
 });
 
@@ -324,9 +360,9 @@ describe('with an API key', () => {
     expect(post).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('This API key was revoked.');
     expect(output(console.error)).not.toContain('formspree login');
-    expect(output(console.log)).toContain('FORMSPREE_API_KEY');
+    expect(output(console.error)).toContain('FORMSPREE_API_KEY');
     expect(stored()).toEqual(before);
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 });
 

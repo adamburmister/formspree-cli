@@ -333,7 +333,7 @@ describe('forms create', () => {
 
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain(reason);
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
   });
 
   it('refuses a --from file that is not there', async () => {
@@ -345,7 +345,7 @@ describe('forms create', () => {
     expect(output(console.error)).toContain(
       '/nowhere/form.json could not be read',
     );
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
   });
 
   it('lists what to fix in a body the server refuses', async () => {
@@ -1131,7 +1131,7 @@ describe('forms create, asking', () => {
     expect(asked).toEqual([]);
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('formspree login');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 });
 
@@ -1168,7 +1168,7 @@ describe('forms update', () => {
 
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('Nothing to change');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
   });
 });
 
@@ -1194,7 +1194,7 @@ describe('forms delete', () => {
 
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('--yes');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
   });
 
   it('deletes once the prompt is answered yes', async () => {
@@ -1362,7 +1362,6 @@ describe('forms delete', () => {
 
     it.each([
       ['nobody is at a terminal', {}, false],
-      ['--json is given', { json: true }, true],
       ['--yes is given off a terminal', { yes: true }, false],
     ])('asks for the id instead when %s', async (_case, args, tty) => {
       serve();
@@ -1374,7 +1373,35 @@ describe('forms delete', () => {
       expect(asked).toEqual([]);
       expect(request).not.toHaveBeenCalled();
       expect(output(console.error)).toContain('formspree forms delete <form>');
-      expect(process.exitCode).toBe(1);
+      expect(process.exitCode).toBe(2);
+    });
+
+    it('says so as JSON with --json, with how to find the id', async () => {
+      serve();
+      const { asked } = answerPrompts([]);
+
+      await run(del, { json: true });
+
+      expect(asked).toEqual([]);
+      expect(request).not.toHaveBeenCalled();
+      expect(JSON.parse(output(console.log))).toEqual({
+        ok: false,
+        error: {
+          code: 'MISSING_ARGUMENT',
+          message: 'Say which form to delete: formspree forms delete <form>',
+        },
+        detail: 'Say which form to delete: formspree forms delete <form>',
+        retryable: false,
+        next_steps: [
+          {
+            step: 'list_forms',
+            detail: 'List the forms to find the one to delete, by its hashid.',
+            command: 'formspree forms list --json',
+          },
+        ],
+      });
+      expect(console.error).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
     });
   });
 
@@ -1386,7 +1413,7 @@ describe('forms delete', () => {
 
     expect(output(console.error)).toContain('Nothing with that id exists.');
     expect(output(console.log)).not.toContain('Form deleted');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(3);
   });
 });
 
@@ -1492,7 +1519,7 @@ describe('forms validate', () => {
 
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('is not a name=value pair');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
   });
 
   it('reports a form that is not there', async () => {
@@ -1501,6 +1528,6 @@ describe('forms validate', () => {
     await run(validate, { form: 'nope', fields: [] });
 
     expect(output(console.error)).toContain('No form with that id exists.');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(3);
   });
 });
