@@ -1,4 +1,5 @@
 import deployment from '@formspree/deploy';
+import { JSON_BY_DEFAULT } from '../agent.ts';
 import type { DeployResponse } from '@formspree/deploy';
 import chalk from 'chalk';
 import type { Argv } from 'yargs';
@@ -70,7 +71,7 @@ const builder = (yargs: Argv) =>
     })
     .option('json', {
       type: 'boolean',
-      describe: "Print the deployment's result as JSON",
+      describe: `Print the deployment's result as JSON. ${JSON_BY_DEFAULT}`,
     });
 
 const handler = async (args: Args<typeof builder>): Promise<void> => {

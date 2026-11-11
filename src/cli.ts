@@ -10,8 +10,10 @@ import { command as logout } from './cmds/logout.ts';
 import { command as open } from './cmds/open.ts';
 import { command as projects } from './cmds/projects.ts';
 import { command as whoami } from './cmds/whoami.ts';
+import * as agent from './agent.ts';
 import * as failure from './failure.ts';
 import * as log from './log.ts';
+import * as terminal from './terminal.ts';
 import { version } from './version.ts';
 import { versionCheck } from './version_check.ts';
 
@@ -48,15 +50,21 @@ const cli = yargs(argv)
     describe: 'Skip checking the npm registry for updates',
   })
   .middleware((args) => {
-    if (args._[0] === 'login') {
+    // An agent reading the output gets JSON without asking for it.
+    // --json and --no-json say which, whoever is asking.
+    if (args.json === undefined && agent.prefersJson()) args.json = true;
+
+    const dressed = terminal.styled(process.stdout);
+
+    if (args._[0] === 'login' && dressed && !args.json) {
       console.log('');
       console.log(log.banner());
       console.log('');
     }
 
     // --json keeps stdout for the response alone, and `open --url` for
-    // the link.
-    if (args.json || args.url) return;
+    // the link. Piped, it's for the command's output alone too.
+    if (args.json || args.url || !dressed) return;
 
     log.preamble();
 
@@ -79,28 +87,36 @@ const namesNoCommand = (): boolean => {
   return first === undefined || (words.length === 1 && groups.includes(first));
 };
 
-// The banner heads the help wherever it's asked for: `--help`, `-h` or
-// `help`, for the CLI or for one command. It also heads the help that
-// naming no command gets, on stderr: `formspree`, or `formspree forms`.
-// Help that comes with an error, like a mistyped option, goes without.
-// It's printed ahead of yargs' help, not put in its usage text, where
-// yargs would trim the banner's indent.
+// In a terminal, the banner heads the help wherever it's asked for:
+// `--help`, `-h` or `help`, for the CLI or for one command. It also heads
+// the help that naming no command gets, on stderr: `formspree`, or
+// `formspree forms`. Help that comes with an error, like a mistyped
+// option, goes without, and so does help that's piped somewhere. It's
+// printed ahead of yargs' help, not put in its usage text, where yargs
+// would trim the banner's indent.
 const showHelp = cli.showHelp.bind(cli);
 cli.showHelp = (level?: string | ((message: string) => void)) => {
   // yargs prints help that was asked for itself, through a function.
   if (typeof level === 'function') {
-    console.log(`\n${log.banner()}\n`);
+    if (terminal.styled(process.stdout)) {
+      console.log(`\n${log.banner()}\n`);
+    }
     return showHelp(level);
   }
-  if (namesNoCommand()) console.error(`\n${log.banner()}\n`);
+  if (namesNoCommand() && terminal.styled(process.stderr)) {
+    console.error(`\n${log.banner()}\n`);
+  }
   return level === undefined ? showHelp() : showHelp(level);
 };
 
 /** Thrown out of yargs once what it refused has been reported. */
 class Reported extends Error {}
 
-// With --json, a command line yargs refuses is reported as JSON too.
-const json = argv.includes('--json');
+// With --json, a command line yargs refuses is reported as JSON too. So
+// it is for an agent, which gets JSON unless it says --no-json.
+const json =
+  argv.includes('--json') ||
+  (!argv.includes('--no-json') && agent.prefersJson());
 
 // yargs would print its help and the error and exit with 1. This does
 // the same with the exit code for a command line that can't be used,

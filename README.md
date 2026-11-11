@@ -158,13 +158,49 @@ It exits with 1 when the submission isn't valid.
   `--no-interactive` or any option that sets a form's contents, they ask
   nothing and use what they were given.
 - `--json` prints the result as JSON, and nothing else, on stdout. Every
-  command takes it except `login`. For the commands that call the API the
-  result is the API's response.
+  command takes it. For the commands that call the API the result is the
+  API's response.
+- Piped to a file or another program, the output is plain text: no banner, no
+  version line, and no borders around a new form's details or the next steps.
+  The note about which server is in use moves to stderr. Setting
+  `FORCE_COLOR=1` keeps the terminal's look, colors included.
 - A command never offers to log in with piped input or `--json`. With no
   login it says how to get one and exits with 4.
 - `--idempotency-key <key>` on `projects create` and `forms create` makes a
   retry safe: for 24 hours, the same key with the same options returns the
   first result instead of creating again.
+
+#### AI agents
+
+When an AI coding agent runs a command, it gets JSON without asking for it:
+the result on success, and the error with its `next_steps` on failure. Pass
+`--no-json` for plain text instead.
+
+The CLI takes a command to be run by an agent when its output isn't going to a
+terminal and one of these is set: `AI_AGENT`, which agents are settling on, or
+an agent's own variable (`CLAUDECODE`, `CURSOR_AGENT`, `CODEX_SANDBOX`,
+`GEMINI_CLI`, `OPENCODE` and others). A person typing in a terminal gets the
+usual output, even inside an agent's session.
+
+An agent has no browser to log in with, so it does it in two steps and hands
+the approval to you:
+
+```bash
+formspree login --json
+```
+
+That starts a login, prints the link and the code to check as JSON, and returns
+at once. The agent passes you the link. Once you've approved, it runs:
+
+```bash
+formspree login --complete
+```
+
+That waits up to a minute for the approval (`--wait <seconds>` changes it) and
+stores the login. If you haven't approved yet it says so, with
+`"retryable": true`, and can be run again. A command that finds no login
+points the agent at these two steps. An API key in `FORMSPREE_API_KEY` works
+too, and needs no approval.
 
 #### Exit codes
 
@@ -204,7 +240,7 @@ stopped the command itself, it's the same shape, so one reader handles both:
 - `error.code` is a stable name to branch on. The CLI's own are
   `INVALID_USAGE`, `MISSING_ARGUMENT`, `CONFIRMATION_REQUIRED`,
   `INVALID_INPUT`, `NOT_LOGGED_IN`, `INVALID_KEY` and `REQUEST_FAILED`, plus a
-  few for `deploy`, `logout` and the local `formspree.json`.
+  few for `login`, `deploy`, `logout` and the local `formspree.json`.
 - `retryable` says whether the same command can succeed later, unchanged.
 - A step in `next_steps` has a `command` when it's a command to run as it
   stands, like `formspree login`. It never repeats what you typed.

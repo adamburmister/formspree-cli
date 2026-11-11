@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { stripIndent } from 'common-tags';
 import * as log from './log.ts';
+import * as terminal from './terminal.ts';
 import { DEFAULT_ENDPOINT } from './oauth.ts';
 
 export const authRequired = (): void => {
@@ -46,7 +47,8 @@ export const usingEndpoint = (
   { stderr = false }: { stderr?: boolean | undefined } = {},
 ): void => {
   if (endpoint === DEFAULT_ENDPOINT) return;
-  if (stderr) {
+  // Piped, stdout is the command's output and nothing else.
+  if (stderr || !terminal.styled(process.stdout)) {
     console.error(chalk.gray(`Using ${endpoint} (FORMSPREE_API_URL)`));
     return;
   }

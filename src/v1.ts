@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import chalk from 'chalk';
 import type { Argv } from 'yargs';
+import * as agent from './agent.ts';
 import * as api from './api.ts';
 import * as failure from './failure.ts';
 import type { Failure } from './failure.ts';
@@ -44,7 +45,7 @@ export const options = <T>(yargs: Argv<T>) =>
     })
     .option('json', {
       type: 'boolean',
-      describe: 'Print the API response as JSON',
+      describe: `Print the API response as JSON. ${agent.JSON_BY_DEFAULT}`,
     });
 
 /** The option for the creates that honor an Idempotency-Key. */
@@ -179,10 +180,14 @@ const notLoggedIn = (reason: string): Failure => ({
   message: reason,
   next: [
     {
-      step: 'log_in',
+      step: 'start_login',
       detail:
-        'Run formspree login and approve it in the browser, or set FORMSPREE_API_KEY to an API key.',
-      command: 'formspree login',
+        'Start a login for the user to approve in their browser. It prints the link to give them, and how to finish.',
+      command: 'formspree login --json',
+    },
+    {
+      step: 'or_use_key',
+      detail: 'Or set FORMSPREE_API_KEY to an API key.',
     },
   ],
 });

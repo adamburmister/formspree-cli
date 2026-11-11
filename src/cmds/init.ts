@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { JSON_BY_DEFAULT } from '../agent.ts';
 import type { Argv } from 'yargs';
 import type { Args, Command } from '../command.ts';
 import * as log from '../log.ts';
@@ -9,7 +10,7 @@ const FILE = 'formspree.json';
 const builder = (yargs: Argv) =>
   yargs.option('json', {
     type: 'boolean',
-    describe: 'Print whether the file was created, as JSON',
+    describe: `Print whether the file was created, as JSON. ${JSON_BY_DEFAULT}`,
   });
 
 const handler = async (args: Args<typeof builder>): Promise<void> => {

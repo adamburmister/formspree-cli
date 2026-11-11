@@ -1,4 +1,5 @@
 import type { Argv } from 'yargs';
+import { JSON_BY_DEFAULT } from '../../agent.ts';
 import type { Args, Command } from '../../command.ts';
 import { readConfig, writeConfig } from '../../config.ts';
 import type { SiteConfig } from '../../config.ts';
@@ -24,7 +25,7 @@ const builder = (yargs: Argv) =>
     })
     .option('json', {
       type: 'boolean',
-      describe: 'Print what was added, as JSON',
+      describe: `Print what was added, as JSON. ${JSON_BY_DEFAULT}`,
     });
 
 const handler = (args: Args<typeof builder>): void => {

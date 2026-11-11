@@ -1,9 +1,13 @@
 import type { Argv } from 'yargs';
+import { JSON_BY_DEFAULT } from '../agent.ts';
 import type { Args, Command } from '../command.ts';
+import * as failure from '../failure.ts';
+import type { Step } from '../failure.ts';
 import * as log from '../log.ts';
-import { logIn } from '../login.ts';
+import * as login from '../login.ts';
 import * as messages from '../messages.ts';
 import * as oauth from '../oauth.ts';
+import * as spin from '../spinner.ts';
 
 const builder = (yargs: Argv) =>
   yargs
@@ -18,6 +22,19 @@ const builder = (yargs: Argv) =>
       describe:
         'Open the login link in your browser. Turn off with --no-browser to only print it',
     })
+    .option('json', {
+      type: 'boolean',
+      describe: `Start a login for someone else to approve: print the link and the code as JSON, and return without waiting. Finish it with --complete. ${JSON_BY_DEFAULT}`,
+    })
+    .option('complete', {
+      type: 'boolean',
+      describe: 'Finish a login that --json started, once it has been approved',
+    })
+    .option('wait', {
+      type: 'number',
+      default: 60,
+      describe: 'How many seconds --complete waits for the approval',
+    })
     // Declared only so `login --key` (or `-k`) is caught, not silently
     // ignored.
     .option('key', {
@@ -26,37 +43,184 @@ const builder = (yargs: Argv) =>
       hidden: true,
     });
 
-const handler = async (args: Args<typeof builder>): Promise<void> => {
+type LoginArgs = Args<typeof builder>;
+
+/** What's left to do with a login that's waiting to be approved. */
+const approval = (link: string, code: string): Step[] => [
+  {
+    step: 'ask_user_to_approve',
+    detail: `Ask the user to open the link, check that it shows the code ${code}, and approve.`,
+    url: link,
+  },
+  {
+    step: 'complete_login',
+    detail:
+      'Once they have approved, run this to finish logging in. It waits up to a minute for the approval.',
+    command: 'formspree login --complete',
+  },
+];
+
+/**
+ * Starts a login and hands it over: prints the link and the code for
+ * someone to approve with, and what to run once they have.
+ */
+const handOver = async (
+  args: LoginArgs,
+  endpoint: string,
+  clientId: string,
+): Promise<void> => {
+  try {
+    const device = await login.start({
+      endpoint,
+      clientId,
+      scope: args.scope || oauth.DEFAULT_SCOPE,
+    });
+
+    console.log(
+      JSON.stringify(
+        {
+          status: 'pending',
+          endpoint,
+          verification_uri: device.verification_uri,
+          verification_uri_complete: device.verification_uri_complete,
+          user_code: device.user_code,
+          expires_in: device.expires_in ?? 900,
+          next_steps: approval(
+            device.verification_uri_complete,
+            device.user_code,
+          ),
+        },
+        null,
+        2,
+      ),
+    );
+  } catch (error) {
+    login.reportFailure(args, login.describe(error, endpoint));
+  }
+};
+
+/** Finishes a login that was handed over, once it has been approved. */
+const finish = async (args: LoginArgs, endpoint: string): Promise<void> => {
+  // With --json there's nobody watching a spinner.
+  const spinner = args.json
+    ? undefined
+    : spin.start('Waiting for you to approve in the browser');
+  const outcome = await login.complete({ endpoint, wait: args.wait ?? 60 });
+  spinner?.clear();
+
+  switch (outcome.status) {
+    case 'logged_in':
+      if (args.json) {
+        console.log(
+          JSON.stringify(
+            { logged_in: true, endpoint, scope: outcome.login?.scope },
+            null,
+            2,
+          ),
+        );
+      } else {
+        log.success('Logged in');
+      }
+      return;
+
+    case 'pending':
+      failure.report(args, {
+        code: 'LOGIN_PENDING',
+        message: 'The login has not been approved yet',
+        // Nothing's wrong: the same command works once it's approved.
+        retryable: true,
+        next: approval(
+          outcome.waiting.verification_uri_complete,
+          outcome.waiting.user_code,
+        ),
+      });
+      return;
+
+    case 'none':
+      failure.report(args, {
+        code: 'NO_PENDING_LOGIN',
+        message: 'No login is waiting to be completed',
+        next: [
+          {
+            step: 'start_login',
+            detail:
+              'Start a login first. It prints the link for the user to approve with.',
+            command: 'formspree login --json',
+          },
+        ],
+      });
+      return;
+
+    case 'failed':
+      login.reportFailure(args, login.describe(outcome.error, endpoint));
+  }
+};
+
+const handler = async (args: LoginArgs): Promise<void> => {
   const endpoint = oauth.endpoint();
   const clientId = oauth.clientIdFor(endpoint);
-  const scope = args.scope || oauth.DEFAULT_SCOPE;
 
   if (args.key) {
-    log.error("API keys don't need a login");
-    log.meta(
-      `Pass ${log.variable(
-        '--key',
-      )} to the command itself, or set the ${log.variable(
-        'FORMSPREE_API_KEY',
-      )} env variable.`,
+    const fix =
+      'Pass --key to the command itself, or set the FORMSPREE_API_KEY env variable.';
+    failure.report(
+      args,
+      {
+        code: 'INVALID_USAGE',
+        message: "API keys don't need a login",
+        next: [{ step: 'use_key', detail: fix }],
+      },
+      () => {
+        log.error("API keys don't need a login");
+        log.meta(
+          `Pass ${log.variable(
+            '--key',
+          )} to the command itself, or set the ${log.variable(
+            'FORMSPREE_API_KEY',
+          )} env variable.`,
+        );
+      },
     );
-    process.exitCode = 1;
     return;
   }
 
   // No client id: production's isn't set yet, or a development endpoint
   // without FORMSPREE_CLIENT_ID.
   if (!clientId) {
-    log.error(
-      `Client ID is not set. Cannot log in to ${log.variable(endpoint)}`,
+    failure.report(
+      args,
+      {
+        code: 'LOGIN_UNAVAILABLE',
+        message: `Client ID is not set. Cannot log in to ${endpoint}`,
+        next: [
+          {
+            step: 'use_key',
+            detail: 'Set FORMSPREE_API_KEY to an API key instead.',
+          },
+        ],
+      },
+      () =>
+        log.error(
+          `Client ID is not set. Cannot log in to ${log.variable(endpoint)}`,
+        ),
     );
-    process.exitCode = 1;
     return;
   }
 
-  messages.usingEndpoint(endpoint);
+  messages.usingEndpoint(endpoint, { stderr: args.json });
 
-  await logIn({ endpoint, clientId, scope, openBrowser: args.browser });
+  if (args.complete) {
+    await finish(args, endpoint);
+  } else if (args.json) {
+    await handOver(args, endpoint, clientId);
+  } else {
+    await login.logIn({
+      endpoint,
+      clientId,
+      scope: args.scope || oauth.DEFAULT_SCOPE,
+      openBrowser: args.browser,
+    });
+  }
 };
 
 export const command: Command<typeof builder> = {

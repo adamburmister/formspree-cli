@@ -125,7 +125,7 @@ it('says there is no login as JSON with --json, and exits with 4', async () => {
 
   const printed = JSON.parse(output(console.log));
   expect(printed.error.code).toBe('NOT_LOGGED_IN');
-  expect(printed.next_steps[0].command).toBe('formspree login');
+  expect(printed.next_steps[0].command).toBe('formspree login --json');
   expect(console.error).not.toHaveBeenCalled();
   expect(process.exitCode).toBe(4);
 });

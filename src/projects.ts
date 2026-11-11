@@ -3,6 +3,7 @@ import * as accounts from './accounts.ts';
 import * as log from './log.ts';
 import * as prompt from './prompt.ts';
 import type { Prompts } from './prompt.ts';
+import * as terminal from './terminal.ts';
 import type { Account, Project } from './types.ts';
 import * as v1 from './v1.ts';
 
@@ -60,11 +61,18 @@ export const note = (
   project: Project,
   options: { guide?: boolean } = {},
 ): void => {
-  prompt.note(
-    v1.table(details(project)).join('\n'),
-    `Project created: ${created(project)}`,
-    options,
-  );
+  const title = `Project created: ${created(project)}`;
+  const rows = v1.table(details(project));
+
+  // Piped somewhere, it's said as every other result is, with no frame.
+  if (!terminal.styled(process.stdout)) {
+    log.success(title);
+    console.log('');
+    for (const row of rows) console.log(`  ${row}`);
+    return;
+  }
+
+  prompt.note(rows.join('\n'), title, options);
 };
 
 /**

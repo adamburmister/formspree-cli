@@ -129,6 +129,13 @@ export const requestDeviceCode = async ({
 /**
  * Polls the token endpoint until the device authorization is approved,
  * denied or expired (RFC 8628 §3.4).
+ *
+ * `expiresIn` is how long to keep polling, in seconds. Running out of it
+ * rejects with `expired_token` and no HTTP status: one with a status is
+ * the server saying the code itself has expired.
+ *
+ * With `immediate` the first poll is sent at once, for a login that may
+ * already have been approved.
  */
 export const pollForToken = async ({
   endpoint,
@@ -136,27 +143,34 @@ export const pollForToken = async ({
   deviceCode,
   interval,
   expiresIn,
+  immediate = false,
 }: {
   endpoint: string;
   clientId: string;
   deviceCode: string;
   interval?: number | undefined;
   expiresIn?: number | undefined;
+  immediate?: boolean;
 }): Promise<TokenResponse> => {
   // RFC 8628 defaults: poll every 5 seconds; codes last 15 minutes here.
   let wait = (interval || 5) * 1000;
-  const lifetime = (expiresIn || 900) * 1000;
+  // Zero is a time too: with `immediate`, one poll and no more.
+  const lifetime = (expiresIn ?? 900) * 1000;
   let elapsed = 0;
   let networkFailures = 0;
+  let first = immediate;
 
   for (;;) {
+    const pause = first ? 0 : wait;
+    first = false;
+
     // Give up once the code has expired rather than poll a dead code.
-    if (elapsed + wait > lifetime) {
+    if (elapsed + pause > lifetime) {
       throw new OAuthError('expired_token');
     }
 
-    await sleep(wait);
-    elapsed += wait;
+    if (pause) await sleep(pause);
+    elapsed += pause;
 
     let response: AxiosResponse<TokenResponse | OAuthErrorBody>;
     try {

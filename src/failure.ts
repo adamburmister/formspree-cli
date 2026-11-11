@@ -28,6 +28,7 @@ export type Reason =
   | 'MISSING_ARGUMENT'
   | 'CONFIRMATION_REQUIRED'
   | 'INVALID_INPUT'
+  | 'NO_PENDING_LOGIN'
   // The credential: exit code 4.
   | 'NOT_LOGGED_IN'
   | 'INVALID_KEY'
@@ -42,6 +43,11 @@ export type Reason =
   | 'LOGOUT_FAILED'
   | 'REVOKE_FAILED'
   | 'NO_DASHBOARD_LINK'
+  | 'LOGIN_PENDING'
+  | 'LOGIN_EXPIRED'
+  | 'LOGIN_DENIED'
+  | 'LOGIN_FAILED'
+  | 'LOGIN_UNAVAILABLE'
   | 'UNEXPECTED';
 
 const USAGE: ReadonlySet<Reason> = new Set([
@@ -49,6 +55,7 @@ const USAGE: ReadonlySet<Reason> = new Set([
   'MISSING_ARGUMENT',
   'CONFIRMATION_REQUIRED',
   'INVALID_INPUT',
+  'NO_PENDING_LOGIN',
 ]);
 const AUTH: ReadonlySet<Reason> = new Set([
   'NOT_LOGGED_IN',
@@ -60,12 +67,14 @@ const AUTH: ReadonlySet<Reason> = new Set([
 /**
  * Something to do about a failure. `command` is there when the step is a
  * command to run as it stands. It never repeats what was typed, so no
- * key given on the command line can end up in it.
+ * key given on the command line can end up in it. `url` is a page for a
+ * person to open.
  */
 export interface Step {
   step: string;
   detail: string;
   command?: string;
+  url?: string;
 }
 
 /** A failure the CLI reports itself, as opposed to one the API reported. */

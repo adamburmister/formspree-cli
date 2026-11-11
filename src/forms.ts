@@ -6,6 +6,7 @@ import * as log from './log.ts';
 import * as projects from './projects.ts';
 import * as prompt from './prompt.ts';
 import type { Prompts } from './prompt.ts';
+import * as terminal from './terminal.ts';
 import type {
   Account,
   ActionInput,
@@ -211,11 +212,18 @@ export const note = (
   form: FormDetail,
   options: { guide?: boolean } = {},
 ): void => {
-  prompt.note(
-    v1.table(details(form)).join('\n'),
-    `Form created: ${created(form)}`,
-    options,
-  );
+  const title = `Form created: ${created(form)}`;
+  const rows = v1.table(details(form));
+
+  // Piped somewhere, it's said as every other result is, with no frame.
+  if (!terminal.styled(process.stdout)) {
+    log.success(title);
+    console.log('');
+    for (const row of rows) console.log(`  ${row}`);
+    return;
+  }
+
+  prompt.note(rows.join('\n'), title, options);
 };
 
 /**

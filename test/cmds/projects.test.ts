@@ -235,7 +235,9 @@ describe('projects list', () => {
       code: 'NOT_LOGGED_IN',
       message: 'Not logged in',
     });
-    expect(printed.next_steps[0].command).toBe('formspree login');
+    // The login it points at is the one an agent can hand to a person.
+    expect(printed.next_steps[0].command).toBe('formspree login --json');
+    expect(printed.next_steps[1].step).toBe('or_use_key');
     expect(console.error).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(4);
   });
@@ -1430,7 +1432,7 @@ describe('a command that finds no login, in a terminal', () => {
       // It says how to log in, as JSON, and leaves it there.
       const printed = JSON.parse(output(console.log));
       expect(printed.error.code).toBe('NOT_LOGGED_IN');
-      expect(printed.next_steps[0].command).toBe('formspree login');
+      expect(printed.next_steps[0].command).toBe('formspree login --json');
     });
 
     it('off a terminal', async () => {

@@ -92,3 +92,57 @@ describe('note', () => {
     expect(stdout).not.toContain('\u001b[2m\u001b[36m');
   });
 });
+
+describe('piped somewhere', () => {
+  let logged: string[];
+  let errors: string[];
+
+  beforeEach(() => {
+    vi.stubEnv('FORCE_COLOR', '0');
+    logged = [];
+    errors = [];
+    vi.spyOn(console, 'log').mockImplementation((line: string) => {
+      logged.push(line);
+    });
+    vi.spyOn(console, 'error').mockImplementation((line: string) => {
+      errors.push(line);
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('prints a box as its title and text, with nothing drawn', () => {
+    box(
+      '- Verify you@example.com.\n  https://formspree.io/account',
+      'Next steps',
+    );
+
+    expect(logged).toEqual([
+      '  Next steps:',
+      '  - Verify you@example.com.',
+      '    https://formspree.io/account',
+    ]);
+    expect(stdout).toBe('');
+  });
+
+  it('prints a box that belongs to an error on stderr', () => {
+    box('- Upgrade the plan.', 'Next steps', { stderr: true });
+
+    expect(errors).toEqual(['  Next steps:', '  - Upgrade the plan.']);
+    expect(logged).toEqual([]);
+  });
+
+  it('prints a note as its title and text, with nothing drawn', () => {
+    note('Submit to  https://formspree.io/f/x\nreCAPTCHA  off', 'Form details');
+
+    expect(logged).toEqual([
+      'Form details',
+      '',
+      '  Submit to  https://formspree.io/f/x',
+      '  reCAPTCHA  off',
+    ]);
+    expect(stdout).toBe('');
+  });
+});

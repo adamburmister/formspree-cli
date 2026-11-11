@@ -23,6 +23,9 @@
 - With `--json`, every failure is JSON on stdout: the API's error as it came, or the CLI's own in the same shape, with a stable `error.code` and the next steps to take.
 - Exit with 2 for a command line that can't be used, 3 for not found, and 4 for a missing or refused login or key. Other failures still exit with 1.
 - `forms add` exits with 1 when the key already exists. It used to print the error and exit with 0.
+- Print JSON by default when an AI agent runs a command, detected from `AI_AGENT` or the agent's own variable. `--no-json` turns it off.
+- `login --json` starts a login for someone else to approve: it prints the link and the code as JSON and returns, and `login --complete` finishes it. For agents, which have no browser.
+- Print plain text when the output is piped: no banner, version line or borders, with the note about the server on stderr. `FORCE_COLOR=1` keeps the terminal's look.
 - Check for updates in the background, at most once a day and only in a terminal, instead of before every command.
 
 ## 0.9.0

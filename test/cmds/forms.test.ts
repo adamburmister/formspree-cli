@@ -246,6 +246,26 @@ describe('forms create', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it('prints the form as plain text when the output is piped', async () => {
+    vi.stubEnv('FORCE_COLOR', '0');
+    login(credentialsFile);
+    answer(200, { form, next_steps: nextSteps });
+    const { framed } = answerPrompts();
+
+    await run(create, { name: 'Contact form' });
+    vi.unstubAllEnvs();
+
+    // Nothing is framed: no note, no box.
+    expect(framed).toEqual([]);
+    const shown = output(console.log).split('\n');
+    expect(shown[0]).toBe('✔ Form created: Contact form (xyzabcde)');
+    expect(shown).toContain('  Next steps:');
+    expect(shown).toContain('  - Ask the user to verify team@acme.example.');
+    expect(output(console.log)).toMatch(
+      /^ {2}Submit to {2}https:\/\/formspree\.io\/f\/xyzabcde$/m,
+    );
+  });
+
   describe("the new form's id", () => {
     // What turns text the Formspree red, as the banner is.
     const RED = chalk.bold.red('|').split('|')[0];

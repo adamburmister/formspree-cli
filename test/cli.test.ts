@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AGENT_VARIABLES } from '../src/agent.ts';
 import { bannerAt } from './helpers/banner.ts';
 import { plain } from './helpers/oauth.ts';
 
@@ -13,7 +14,10 @@ const CLI = path.join(import.meta.dirname, '..', 'src', 'cli.ts');
 
 /**
  * The environment for a real run: an empty directory, so no .env is
- * loaded, with no Formspree env variables left over from the shell.
+ * loaded, with no Formspree env variables left over from the shell, and
+ * none of the variables an AI agent sets, which these tests may well be
+ * run under. The output is dressed as in a terminal, as FORCE_COLOR asks
+ * (see vitest.config.ts), unless `extra` turns that off.
  */
 const sandbox = (extra: NodeJS.ProcessEnv = {}) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'formspree-cli-'));
@@ -26,11 +30,15 @@ const sandbox = (extra: NodeJS.ProcessEnv = {}) => {
     'FORMSPREE_API_URL',
     'FORMSPREE_CLIENT_ID',
     'FORMSPREE_API_KEY',
+    ...AGENT_VARIABLES,
   ]) {
     if (!(name in extra)) delete env[name];
   }
   return { cwd, env };
 };
+
+/** What turns the terminal's look off, as when output is piped. */
+const PIPED = { FORCE_COLOR: '0' };
 
 /** Runs the real CLI, with no network version check. Returns its lines. */
 const cli = (args: string[]): string[] => {
@@ -115,8 +123,8 @@ it('leaves other commands without the banner', () => {
 });
 
 /** Runs the real CLI. Returns its exit code and both streams, apart. */
-const result = (args: string[]) => {
-  const { cwd, env } = sandbox();
+const result = (args: string[], extra: NodeJS.ProcessEnv = {}) => {
+  const { cwd, env } = sandbox(extra);
   const run = spawnSync(
     process.execPath,
     [CLI, ...args, '--skip-version-check'],
@@ -124,6 +132,89 @@ const result = (args: string[]) => {
   );
   return { code: run.status, stdout: run.stdout, stderr: plain(run.stderr) };
 };
+
+describe('piped somewhere, with no terminal to dress the output for', () => {
+  it('prints help without the banner', () => {
+    const { stdout } = result(['--help'], PIPED);
+
+    expect(stdout.startsWith('formspree <command>')).toBe(true);
+    expect(bannerAt(stdout.split('\n'))).toBe(-1);
+  });
+
+  it('prints no banner over the help a bare `formspree` gets', () => {
+    const { stderr } = result([], PIPED);
+
+    expect(bannerAt(stderr.split('\n'))).toBe(-1);
+    expect(stderr).toContain('formspree login');
+  });
+
+  it('prints no version line, only what the command has to say', () => {
+    const { stdout, stderr } = result(['whoami'], PIPED);
+
+    expect(stdout).toBe('');
+    expect(stderr).not.toContain('Formspree CLI v');
+    expect(stderr).toContain('Not logged in');
+  });
+
+  it('logs in without the banner', () => {
+    const { stdout } = result(['login'], PIPED);
+
+    expect(bannerAt(stdout.split('\n'))).toBe(-1);
+  });
+});
+
+describe('run by an AI agent', () => {
+  it.each([
+    ['AI_AGENT', 'claude-code_2-1_agent'],
+    ['CLAUDECODE', '1'],
+    ['CURSOR_AGENT', '1'],
+    ['GEMINI_CLI', '1'],
+  ])('prints JSON without being asked, with %s set', (name, value) => {
+    const { code, stdout, stderr } = result(['forms', 'list'], {
+      ...PIPED,
+      [name]: value,
+    });
+
+    expect(JSON.parse(stdout).error.code).toBe('NOT_LOGGED_IN');
+    expect(stderr).toBe('');
+    expect(code).toBe(4);
+  });
+
+  it('reports a command line it cannot use as JSON, without the help', () => {
+    const { code, stdout, stderr } = result(['forms', 'lst'], {
+      ...PIPED,
+      AI_AGENT: 'test',
+    });
+
+    expect(JSON.parse(stdout).error).toEqual({
+      code: 'INVALID_USAGE',
+      message: 'Unknown command. Did you mean list?',
+    });
+    expect(stderr).toBe('');
+    expect(code).toBe(2);
+  });
+
+  it('prints text again with --no-json', () => {
+    const { code, stdout, stderr } = result(['forms', 'list', '--no-json'], {
+      ...PIPED,
+      AI_AGENT: 'test',
+    });
+
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Not logged in');
+    expect(code).toBe(4);
+  });
+
+  it.each(['0', 'false', ''])('is not what AI_AGENT=%j says', (value) => {
+    const { stdout, stderr } = result(['forms', 'list'], {
+      ...PIPED,
+      AI_AGENT: value,
+    });
+
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Not logged in');
+  });
+});
 
 it('exits with 2 for a command line it cannot use', () => {
   const { code, stdout, stderr } = result(['whoami', '--bogus']);
@@ -205,11 +296,16 @@ describe('against a local server', () => {
   let received: { method?: string; url?: string; body: string }[];
 
   // Runs the real CLI without blocking, so the server here can answer it.
-  const cliWithServer = (args: string[], stdin = '') => {
+  const cliWithServer = (
+    args: string[],
+    stdin = '',
+    extra: NodeJS.ProcessEnv = {},
+  ) => {
     const { port } = server.address() as AddressInfo;
     const { cwd, env } = sandbox({
       FORMSPREE_API_URL: `http://127.0.0.1:${port}`,
       FORMSPREE_API_KEY: 'fsk_test',
+      ...extra,
     });
 
     return new Promise<{ code: number | null; stdout: string; stderr: string }>(
@@ -294,6 +390,35 @@ describe('against a local server', () => {
     expect(stdout.trimEnd().split('\n').at(-1)).toBe(
       `http://127.0.0.1:${port}/forms`,
     );
+    expect(code).toBe(0);
+  });
+
+  it('prints a create as plain text when piped, with nothing drawn', async () => {
+    const { code, stdout, stderr } = await cliWithServer(
+      ['projects', 'create', 'Site'],
+      '',
+      PIPED,
+    );
+
+    expect(stdout.split('\n')[0]).toBe('✔ Project created: Site (proj_x)');
+    // No frame, no banner, no version line.
+    expect(stdout).not.toMatch(/[│╭╮╰╯◇]/);
+    expect(stdout).not.toContain('Formspree CLI v');
+    // The note about the server is kept, out of the way on stderr.
+    expect(stderr).toContain('FORMSPREE_API_URL');
+    expect(code).toBe(0);
+  });
+
+  it("prints the API's response as JSON for an agent, without --json", async () => {
+    const { code, stdout } = await cliWithServer(
+      ['projects', 'get', 'proj_x'],
+      '',
+      { ...PIPED, AI_AGENT: 'test' },
+    );
+
+    expect(JSON.parse(stdout)).toEqual({
+      project: { id: 'proj_x', name: 'Site' },
+    });
     expect(code).toBe(0);
   });
 

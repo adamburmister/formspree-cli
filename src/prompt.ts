@@ -8,6 +8,7 @@ import type {
 } from '@clack/prompts';
 import * as log from './log.ts';
 import { guarded, type Spinner } from './spinner.ts';
+import * as terminal from './terminal.ts';
 
 /**
  * Thrown when a question is abandoned with Ctrl+C. By then the prompt has
@@ -59,7 +60,7 @@ const answered = <T>(value: T | symbol): T => {
 
 const prompts: Prompts = {
   intro: (title) => {
-    console.error(`\n${log.banner()}\n`);
+    if (terminal.styled(process.stderr)) console.error(`\n${log.banner()}\n`);
     clack.intro(title, drawn);
   },
   outro: (message) => clack.outro(message, drawn),
@@ -83,15 +84,27 @@ export const session = <T>(run: (p: Prompts) => Promise<T>): Promise<T> =>
  * Frames a block of a command's output in a titled box, as wide as what's
  * in it. Unlike the prompts it goes to stdout, with the rest of the
  * output, unless it belongs to an error: then `stderr` sends it there.
+ *
+ * The frame is for a terminal. Piped, the block is plain text.
  */
 export const box = (
   message: string,
   title: string,
   { stderr = false }: { stderr?: boolean } = {},
 ): void => {
+  const output = stderr ? process.stderr : process.stdout;
+
+  // Piped somewhere, it's the title and the text, with nothing drawn.
+  if (!terminal.styled(output)) {
+    const print = stderr ? console.error : console.log;
+    print(`  ${title}:`);
+    for (const line of message.split('\n')) print(`  ${line}`);
+    return;
+  }
+
   // clack's defaults are the terminal's full width and square corners.
   clack.box(message, ` ${title} `, {
-    output: stderr ? process.stderr : process.stdout,
+    output,
     withGuide: false,
     width: 'auto',
     rounded: true,
@@ -109,6 +122,14 @@ export const note = (
   title: string,
   { guide = false }: { guide?: boolean } = {},
 ): void => {
+  // Piped somewhere, it's the title and the text, with nothing drawn.
+  if (!terminal.styled(process.stdout)) {
+    console.log(title);
+    console.log('');
+    for (const line of message.split('\n')) console.log(`  ${line}`);
+    return;
+  }
+
   clack.note(message, title, {
     output: process.stdout,
     withGuide: guide,

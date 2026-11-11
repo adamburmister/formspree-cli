@@ -1,4 +1,5 @@
 import type { Argv } from 'yargs';
+import { JSON_BY_DEFAULT } from '../agent.ts';
 import type { Args, Command } from '../command.ts';
 import * as credentials from '../credentials.ts';
 import * as failure from '../failure.ts';
@@ -10,7 +11,7 @@ import { OAuthError } from '../oauth.ts';
 const builder = (yargs: Argv) =>
   yargs.option('json', {
     type: 'boolean',
-    describe: 'Print whether a login was removed, as JSON',
+    describe: `Print whether a login was removed, as JSON. ${JSON_BY_DEFAULT}`,
   });
 
 const handler = async (args: Args<typeof builder>): Promise<void> => {

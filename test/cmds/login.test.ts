@@ -406,7 +406,7 @@ describe('API keys', () => {
     expect(post).not.toHaveBeenCalled();
     expect(output(console.error)).toContain("API keys don't need a login");
     expect(output(console.log)).toContain('FORMSPREE_API_KEY');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
     expect(fs.existsSync(credentialsFile)).toBe(false);
   });
 
@@ -505,5 +505,235 @@ describe('opening the login link', () => {
     );
     expect(output(console.log)).toContain('Logged in');
     expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe('a login handed over to someone else to approve', () => {
+  const LINK = 'https://formspree.io/device?user_code=WDJB-MJHT';
+  const pendingFile = () =>
+    path.join(path.dirname(credentialsFile), 'pending-login.json');
+  const printed = () => JSON.parse(output(console.log));
+  const stored = () => JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
+
+  it('starts with --json: prints the link and the code, and returns without waiting', async () => {
+    serve({ polls: [] });
+
+    await run(cmd, { json: true });
+
+    expect(printed()).toEqual({
+      status: 'pending',
+      endpoint: 'https://formspree.io',
+      verification_uri: 'https://formspree.io/device',
+      verification_uri_complete: LINK,
+      user_code: 'WDJB-MJHT',
+      expires_in: 900,
+      next_steps: [
+        {
+          step: 'ask_user_to_approve',
+          detail:
+            'Ask the user to open the link, check that it shows the code WDJB-MJHT, and approve.',
+          url: LINK,
+        },
+        {
+          step: 'complete_login',
+          detail:
+            'Once they have approved, run this to finish logging in. It waits up to a minute for the approval.',
+          command: 'formspree login --complete',
+        },
+      ],
+    });
+    expect(tokenPolls()).toEqual([]);
+    expect(sleeps).toEqual([]);
+    expect(browser.open).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
+    expect(fs.existsSync(credentialsFile)).toBe(false);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('keeps the device code on disk, private, and out of what it prints', async () => {
+    serve({ polls: [] });
+
+    await run(cmd, { json: true });
+
+    expect(output(console.log)).not.toContain('the-device-code');
+    const kept = JSON.parse(fs.readFileSync(pendingFile(), 'utf8'));
+    expect(kept['https://formspree.io']).toMatchObject({
+      client_id: 'cli-client',
+      device_code: 'the-device-code',
+      user_code: 'WDJB-MJHT',
+      interval: 5,
+    });
+    expect(fs.statSync(pendingFile()).mode & 0o777).toBe(0o600);
+  });
+
+  it('finishes with --complete: checks at once, stores the login and forgets the code', async () => {
+    serve({ polls: [() => tokenResponse()] });
+    await run(cmd, { json: true });
+    vi.mocked(console.log).mockClear();
+
+    await run(cmd, { complete: true, json: true, wait: 60 });
+
+    expect(printed()).toEqual({
+      logged_in: true,
+      endpoint: 'https://formspree.io',
+      scope: 'projects:write',
+    });
+    // Approved already, as it usually is: no waiting before the first poll.
+    expect(sleeps).toEqual([]);
+    expect(tokenPolls()[0]?.params).toEqual({
+      grant_type: DEVICE_GRANT,
+      device_code: 'the-device-code',
+      client_id: 'cli-client',
+    });
+    expect(stored()['https://formspree.io'].access_token).toBe('fso_access_1');
+    expect(fs.existsSync(pendingFile())).toBe(false);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('says it is still waiting when the approval has not come, and can be run again', async () => {
+    serve({
+      polls: [
+        () => oauthError('authorization_pending'),
+        () => oauthError('authorization_pending'),
+        () => oauthError('authorization_pending'),
+        () => tokenResponse(),
+      ],
+    });
+    await run(cmd, { json: true });
+    vi.mocked(console.log).mockClear();
+
+    // 12 seconds: a poll at once, then two more, 5 seconds apart.
+    await run(cmd, { complete: true, json: true, wait: 12 });
+
+    expect(printed()).toMatchObject({
+      ok: false,
+      error: {
+        code: 'LOGIN_PENDING',
+        message: 'The login has not been approved yet',
+      },
+      retryable: true,
+      next_steps: [
+        { step: 'ask_user_to_approve', url: LINK },
+        { step: 'complete_login', command: 'formspree login --complete' },
+      ],
+    });
+    expect(tokenPolls()).toHaveLength(3);
+    expect(sleeps).toEqual([5000, 5000]);
+    expect(fs.existsSync(pendingFile())).toBe(true);
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+    vi.mocked(console.log).mockClear();
+    await run(cmd, { complete: true, json: true, wait: 12 });
+
+    expect(printed().logged_in).toBe(true);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('checks once and no more with --wait 0', async () => {
+    serve({ polls: [() => oauthError('authorization_pending')] });
+    await run(cmd, { json: true });
+    vi.mocked(console.log).mockClear();
+
+    await run(cmd, { complete: true, json: true, wait: 0 });
+
+    expect(printed().error.code).toBe('LOGIN_PENDING');
+    expect(tokenPolls()).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+  });
+
+  it('says to start one when no login is waiting', async () => {
+    serve({ polls: [] });
+
+    await run(cmd, { complete: true, json: true, wait: 60 });
+
+    expect(printed()).toMatchObject({
+      error: { code: 'NO_PENDING_LOGIN' },
+      next_steps: [{ step: 'start_login', command: 'formspree login --json' }],
+    });
+    expect(post).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(2);
+  });
+
+  it('forgets a login that was denied', async () => {
+    serve({ polls: [() => oauthError('access_denied')] });
+    await run(cmd, { json: true });
+    vi.mocked(console.log).mockClear();
+
+    await run(cmd, { complete: true, json: true, wait: 60 });
+
+    expect(printed().error).toEqual({
+      code: 'LOGIN_DENIED',
+      message: 'Login was denied in the browser',
+    });
+    expect(fs.existsSync(pendingFile())).toBe(false);
+    expect(fs.existsSync(credentialsFile)).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('forgets a login whose code has expired, without asking the server', async () => {
+    serve({ device: deviceResponse({ expires_in: -1 }), polls: [] });
+    await run(cmd, { json: true });
+    vi.mocked(console.log).mockClear();
+
+    await run(cmd, { complete: true, json: true, wait: 60 });
+
+    expect(printed()).toMatchObject({
+      error: { code: 'LOGIN_EXPIRED' },
+      next_steps: [{ step: 'start_again', command: 'formspree login' }],
+    });
+    expect(tokenPolls()).toEqual([]);
+    expect(fs.existsSync(pendingFile())).toBe(false);
+  });
+
+  it('keeps a login to try again when the server could not be reached', async () => {
+    serve({ polls: [() => response(500, 'oops')] });
+    await run(cmd, { json: true });
+    vi.mocked(console.log).mockClear();
+
+    await run(cmd, { complete: true, json: true, wait: 60 });
+
+    expect(printed().error.code).toBe('LOGIN_FAILED');
+    expect(fs.existsSync(pendingFile())).toBe(true);
+  });
+
+  it('says "Logged in" for a person finishing it without --json', async () => {
+    serve({ polls: [() => tokenResponse()] });
+    await run(cmd, { json: true });
+    vi.mocked(console.log).mockClear();
+
+    await run(cmd, { complete: true, wait: 60 });
+
+    expect(output(console.log)).toContain('Logged in');
+    expect(stored()['https://formspree.io'].refresh_token).toBe(
+      'fso_refresh_1',
+    );
+  });
+
+  it('reports a login that could not be started as JSON', async () => {
+    serve({ device: response(429, ''), polls: [] });
+
+    await run(cmd, { json: true });
+
+    expect(printed()).toMatchObject({
+      error: { code: 'LOGIN_FAILED', message: 'Too many login attempts' },
+      retryable: true,
+    });
+    expect(fs.existsSync(pendingFile())).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('says a login is not possible, and to use a key, with no client id', async () => {
+    delete process.env.FORMSPREE_CLIENT_ID;
+    serve({ polls: [] });
+
+    await run(cmd, { json: true });
+
+    expect(printed()).toMatchObject({
+      error: { code: 'LOGIN_UNAVAILABLE' },
+      next_steps: [{ step: 'use_key' }],
+    });
+    expect(post).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 });
