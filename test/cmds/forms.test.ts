@@ -1183,13 +1183,16 @@ describe('forms create, asking', () => {
     expect(created()[0]?.data).toEqual({});
   });
 
-  it('asks nothing when there is no login to ask on behalf of', async () => {
+  it('asks nothing about the form when there is no login to ask on behalf of', async () => {
     fs.unlinkSync(credentialsFile);
-    const { asked } = answerPrompts([]);
+    // The offer to log in is turned down.
+    const { asked } = answerPrompts([false]);
 
     await run(create, {});
 
-    expect(asked).toEqual([]);
+    expect(asked).toEqual([
+      { kind: 'confirm', message: 'Not logged in. Log in now?' },
+    ]);
     expect(request).not.toHaveBeenCalled();
     expect(output(console.error)).toContain('formspree login');
     expect(process.exitCode).toBe(4);

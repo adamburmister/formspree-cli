@@ -1445,6 +1445,7 @@ describe('a command that finds no login, in a terminal', () => {
 
     it('on a server the CLI has no client id for', async () => {
       vi.unstubAllEnvs();
+      vi.stubEnv('FORMSPREE_API_URL', 'https://review.formspree.io');
 
       await refused({});
 
