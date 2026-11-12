@@ -40,9 +40,15 @@ const sandbox = (extra: NodeJS.ProcessEnv = {}) => {
 /** What turns the terminal's look off, as when output is piped. */
 const PIPED = { FORCE_COLOR: '0' };
 
+/**
+ * A server the CLI has no client id for, so a login stops before it sends
+ * anything. Without it, `login` would start a real one on formspree.io.
+ */
+const NO_CLIENT = { FORMSPREE_API_URL: 'http://127.0.0.1:9' };
+
 /** Runs the real CLI, with no network version check. Returns its lines. */
-const cli = (args: string[]): string[] => {
-  const { cwd, env } = sandbox();
+const cli = (args: string[], extra: NodeJS.ProcessEnv = {}): string[] => {
+  const { cwd, env } = sandbox(extra);
   const result = spawnSync(
     process.execPath,
     [CLI, ...args, '--skip-version-check'],
@@ -171,7 +177,7 @@ it('keeps each example on one line when the help is piped', () => {
 });
 
 it('shows the banner before anything else when logging in', () => {
-  const login = cli(['login']);
+  const login = cli(['login'], NO_CLIENT);
   const preamble = login.findIndex((line) => line.includes('Formspree CLI v'));
 
   expect(login[0]).toBe('');
@@ -221,7 +227,7 @@ describe('piped somewhere, with no terminal to dress the output for', () => {
   });
 
   it('logs in without the banner', () => {
-    const { stdout } = result(['login'], PIPED);
+    const { stdout } = result(['login'], { ...PIPED, ...NO_CLIENT });
 
     expect(bannerAt(stdout.split('\n'))).toBe(-1);
   });

@@ -185,8 +185,7 @@ const handler = async (args: LoginArgs): Promise<void> => {
     return;
   }
 
-  // No client id: production's isn't set yet, or a development endpoint
-  // without FORMSPREE_CLIENT_ID.
+  // No client id: a development endpoint without FORMSPREE_CLIENT_ID.
   if (!clientId) {
     failure.report(
       args,

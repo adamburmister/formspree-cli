@@ -266,15 +266,34 @@ describe('unexpected failures', () => {
 });
 
 describe('choosing the client id', () => {
+  it("uses formspree.io's built-in client id", async () => {
+    delete process.env.FORMSPREE_CLIENT_ID;
+    serve({ polls: [() => tokenResponse()] });
+
+    await run(cmd, args);
+
+    const sent = post.mock.calls.map(parseCall);
+    expect(sent.map((call) => call?.params.client_id)).toEqual([
+      '3133091799963270330',
+      '3133091799963270330',
+    ]);
+    const stored = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
+    expect(stored['https://formspree.io'].client_id).toBe(
+      '3133091799963270330',
+    );
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it('says the client id is not set when the endpoint has none', async () => {
     delete process.env.FORMSPREE_CLIENT_ID;
+    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
     serve({ polls: [] });
 
     await run(cmd, {});
 
     expect(post).not.toHaveBeenCalled();
     expect(output(console.error)).toContain(
-      'Client ID is not set. Cannot log in to https://formspree.io',
+      'Client ID is not set. Cannot log in to https://review.formspree.io',
     );
     expectNoClientIdVariable();
     expect(process.exitCode).toBe(1);
@@ -282,6 +301,7 @@ describe('choosing the client id', () => {
 
   it('ignores a --client-id flag', async () => {
     delete process.env.FORMSPREE_CLIENT_ID;
+    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
     serve({ polls: [] });
 
     await run(cmd, { clientId: 'flag-client' });
@@ -725,6 +745,7 @@ describe('a login handed over to someone else to approve', () => {
 
   it('says a login is not possible, and to use a key, with no client id', async () => {
     delete process.env.FORMSPREE_CLIENT_ID;
+    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
     serve({ polls: [] });
 
     await run(cmd, { json: true });

@@ -14,11 +14,10 @@ export const REQUEST_TIMEOUT = 15 * 1000;
 // Consecutive network errors to ride out while polling.
 const MAX_NETWORK_FAILURES = 3;
 
-// The public "Formspree CLI" OAuth client's id on each endpoint.
-// TODO: production has no "Formspree CLI" client yet. Fill in its id once
-// it exists; until then, set FORMSPREE_CLIENT_ID.
-const CLIENT_IDS: Record<string, string | null> = {
-  'https://formspree.io': null,
+// The public "Formspree CLI" OAuth client's id on each endpoint. Any other
+// endpoint needs FORMSPREE_CLIENT_ID.
+const CLIENT_IDS: Record<string, string> = {
+  'https://formspree.io': '3133091799963270330',
 };
 
 /** A device authorization, as /oauth/device answers (RFC 8628 §3.2). */
