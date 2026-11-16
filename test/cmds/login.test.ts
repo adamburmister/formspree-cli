@@ -265,6 +265,15 @@ describe('unexpected failures', () => {
   });
 });
 
+/** formspree.io's "Formspree CLI" client. */
+const BUILT_IN_CLIENT_ID = '3133091799963270330';
+
+/** Points at an endpoint the CLI has no client id for. */
+const onEndpointWithoutClientId = () => {
+  delete process.env.FORMSPREE_CLIENT_ID;
+  process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
+};
+
 describe('choosing the client id', () => {
   it("uses formspree.io's built-in client id", async () => {
     delete process.env.FORMSPREE_CLIENT_ID;
@@ -274,19 +283,16 @@ describe('choosing the client id', () => {
 
     const sent = post.mock.calls.map(parseCall);
     expect(sent.map((call) => call?.params.client_id)).toEqual([
-      '3133091799963270330',
-      '3133091799963270330',
+      BUILT_IN_CLIENT_ID,
+      BUILT_IN_CLIENT_ID,
     ]);
     const stored = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
-    expect(stored['https://formspree.io'].client_id).toBe(
-      '3133091799963270330',
-    );
+    expect(stored['https://formspree.io'].client_id).toBe(BUILT_IN_CLIENT_ID);
     expect(process.exitCode).toBeUndefined();
   });
 
   it('says the client id is not set when the endpoint has none', async () => {
-    delete process.env.FORMSPREE_CLIENT_ID;
-    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
+    onEndpointWithoutClientId();
     serve({ polls: [] });
 
     await run(cmd, {});
@@ -300,8 +306,7 @@ describe('choosing the client id', () => {
   });
 
   it('ignores a --client-id flag', async () => {
-    delete process.env.FORMSPREE_CLIENT_ID;
-    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
+    onEndpointWithoutClientId();
     serve({ polls: [] });
 
     await run(cmd, { clientId: 'flag-client' });
@@ -744,8 +749,7 @@ describe('a login handed over to someone else to approve', () => {
   });
 
   it('says a login is not possible, and to use a key, with no client id', async () => {
-    delete process.env.FORMSPREE_CLIENT_ID;
-    process.env.FORMSPREE_API_URL = 'https://review.formspree.io';
+    onEndpointWithoutClientId();
     serve({ polls: [] });
 
     await run(cmd, { json: true });
