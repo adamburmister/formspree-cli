@@ -104,9 +104,9 @@ const detail = (line: string): void => {
  * Prints the steps a response says are left, in a box. `rewrite` maps a
  * step's name to a line that replaces the server's, which is written for
  * API callers, or to null to leave the step out. With `linkedOnly`, steps
- * without a link are left out: those are the agent's steps, which name
- * routes and tools. With `stderr` the box goes there, for the steps that
- * come with an error.
+ * without a link are left out, unless `rewrite` has a line for them: those
+ * are the agent's steps, which name routes and tools. With `stderr` the box
+ * goes there, for the steps that come with an error.
  *
  * `linkedOnly` reads `url` and not `actor`. The server gives every user's
  * step a `url` and no agent's step one, so the two tests agree wherever
@@ -125,9 +125,11 @@ export const nextSteps = (
     stderr?: boolean;
   } = {},
 ): void => {
-  const shown = (steps ?? []).filter(
-    (step) => rewrite[step.step] !== null && (!linkedOnly || step.url),
-  );
+  const shown = (steps ?? []).filter((step) => {
+    const replacement = rewrite[step.step];
+    if (replacement !== undefined) return replacement !== null;
+    return !linkedOnly || Boolean(step.url);
+  });
   if (!shown.length) return;
 
   const lines = shown.flatMap((step) => {
@@ -177,7 +179,17 @@ const reportProblem = (response: ApiResponse): void => {
     console.error('');
   }
 
-  nextSteps(body.next_steps, { linkedOnly: true, stderr: true });
+  nextSteps(body.next_steps, {
+    rewrite: {
+      // Sent to a login that lacks a scope, never to a key. A login asks
+      // for every scope the CLI's commands need, so a new one has it.
+      request_scope: `Log in again to approve the missing access: ${log.variable(
+        'formspree login',
+      )}`,
+    },
+    linkedOnly: true,
+    stderr: true,
+  });
 };
 
 /** What there is to do about having no login the API will take. */

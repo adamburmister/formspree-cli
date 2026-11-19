@@ -368,6 +368,74 @@ describe('projects get', () => {
     expect(process.exitCode).toBe(3);
   });
 
+  it('says to log in again when the login lacks a scope', async () => {
+    login(credentialsFile);
+    answer(
+      403,
+      problem(403, 'This token needs the projects:read scope.', {
+        next_steps: [
+          {
+            step: 'request_scope',
+            title: 'Ask the user for more access',
+            actor: 'agent',
+            detail:
+              "This token wasn't granted projects:read. Start the sign-in again asking for it, and the user approves it on the consent screen.",
+          },
+        ],
+      }),
+    );
+    const { framed } = answerPrompts();
+
+    await run(get, { project: 'proj_2pn3r0jq7zz0t' });
+
+    expect(output(console.error)).toContain(
+      'This token needs the projects:read scope. (403)',
+    );
+    // The server's step is written for an agent that runs the sign-in
+    // itself. Here that is one command.
+    expect(framed).toEqual([
+      {
+        kind: 'box',
+        title: 'Next steps',
+        message:
+          '- Log in again to approve the missing access: formspree login',
+        stderr: true,
+        guide: false,
+      },
+    ]);
+    expect(output(console.error)).not.toContain('consent screen');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('links to the API keys page from a server that sends the old shape', async () => {
+    login(credentialsFile);
+    answer(
+      403,
+      problem(403, 'This API key needs the projects:read scope.', {
+        // Before formspree-server#2338 a login got the step a key gets.
+        next_steps: [
+          {
+            step: 'Create an API key',
+            detail:
+              'An account admin can create one on the API tab of the account settings.',
+            url: 'https://formspree.io/account/api',
+          },
+        ],
+      }),
+    );
+    const { framed } = answerPrompts();
+
+    await run(get, { project: 'proj_2pn3r0jq7zz0t' });
+
+    expect(framed.map((drawn) => drawn.message)).toEqual([
+      [
+        '- An account admin can create one on the API tab of the account settings.',
+        '  https://formspree.io/account/api',
+      ].join('\n'),
+    ]);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('escapes an id before it goes in the path', async () => {
     login(credentialsFile);
     answer(404, problem(404, 'Not found'));
