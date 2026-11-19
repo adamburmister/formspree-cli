@@ -17,6 +17,7 @@
 - Add `projects delete`. It deletes the project's forms first, once you agree in a terminal or pass `--yes --forms`, and with no project id it lists your projects to pick from.
 - Add `open`, which opens the dashboard, a form's or project's page, or the docs in your browser. `--url` prints the link instead.
 - A command that needs a login and finds none offers to log in, in a terminal, then carries on.
+- When a login lacks the access a command needs, the error says to log in again with `formspree login`.
 - Logging in opens the link in your browser as well as printing it. `login --no-browser` only prints it.
 - Refuse an option or command the CLI doesn't know, instead of ignoring it.
 - Add `--json` to `whoami`, `logout`, `init`, `deploy` and `forms add`.

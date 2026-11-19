@@ -4,11 +4,38 @@
  * from the OpenAPI document yet.
  */
 
-/** Something left to do after a request, or a way out of a problem. */
+/** The one API call an agent's step is. */
+export interface StepOperation {
+  /** The route's operationId. Left off for a route outside the v1 documents. */
+  id?: string;
+  method: string;
+  href: string;
+}
+
+/**
+ * Something left to do after a request, or a way out of a problem.
+ *
+ * `title`, `actor` and `operation` come with formspree-server#2338. The
+ * server sends the first two on every step once that's deployed. They stay
+ * optional until then, while production still sends `{step, detail, url?}`,
+ * and for the day after, while an idempotent replay can still be that old.
+ */
 export interface NextStep {
+  /** A snake_case id. Before #2338 some steps had a sentence here. */
   step: string;
+  /** A short label for display. */
+  title?: string;
+  /** Who does it. */
+  actor?: 'agent' | 'user';
+  /** What to do, written to the actor. */
   detail: string;
+  /**
+   * A page for a person to open. A user's step always has one and an
+   * agent's never does. Before #2338 it could be an API route too.
+   */
   url?: string;
+  /** On an agent's step that is one API call. */
+  operation?: StepOperation;
 }
 
 /** One thing wrong with a request body. */

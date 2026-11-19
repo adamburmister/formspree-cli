@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTempConfigDir, output, plain, response } from '../helpers/oauth.ts';
-import type { Account, Project } from '../../src/types.ts';
+import type { Account, NextStep, Project } from '../../src/types.ts';
 import {
   login,
   answer,
@@ -63,7 +63,31 @@ const form = {
   submission_url: 'https://formspree.io/f/xyzabcde',
 };
 
-const nextSteps = [
+const VERIFY =
+  "Click the verification link we emailed to team@acme.example. You can resend it under Linked Emails in your account settings. Submissions aren't emailed to an address until it's verified.";
+
+// What a create answers with, as the server's step registry words it.
+const nextSteps: NextStep[] = [
+  {
+    step: 'wire_endpoint',
+    title: 'Wire your form to its endpoint',
+    actor: 'agent',
+    detail:
+      "Set your HTML form's action to submission_url and its method to POST, or POST JSON to it with Accept: application/json.",
+  },
+  {
+    step: 'verify_email',
+    title: 'Verify the notification address',
+    actor: 'user',
+    detail: VERIFY,
+    url: 'https://formspree.io/account',
+  },
+];
+
+// The same two steps as the server sent them before formspree-server#2338,
+// which production still does: no `title` or `actor`, and a `url` on a step
+// that isn't a page.
+const oldNextSteps: NextStep[] = [
   {
     step: 'wire_endpoint',
     detail: "Set your HTML form's action to submission_url.",
@@ -238,6 +262,25 @@ describe('forms create', () => {
     // Off a set of questions, the note stands on its own.
     expect(details?.guide).toBe(false);
     expect(steps?.message).toBe(
+      [`- ${VERIFY}`, '  https://formspree.io/account'].join('\n'),
+    );
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('prints the same steps from a server that sends the old shape', async () => {
+    login(credentialsFile);
+    answer(200, { form, next_steps: oldNextSteps });
+    const { framed } = answerPrompts();
+
+    await run(create, { name: 'Contact form' });
+
+    // The step the snippet covers is left out, and the user's is printed
+    // with its link, as they are from the new shape.
+    expect(framed.map(({ kind, title }) => `${kind}: ${title}`)).toEqual([
+      'note: Form created: Contact form (xyzabcde)',
+      'box: Next steps',
+    ]);
+    expect(framed[1]?.message).toBe(
       [
         '- Ask the user to verify team@acme.example.',
         '  https://formspree.io/account',
@@ -260,7 +303,7 @@ describe('forms create', () => {
     const shown = output(console.log).split('\n');
     expect(shown[0]).toBe('✔ Form created: Contact form (xyzabcde)');
     expect(shown).toContain('  Next steps:');
-    expect(shown).toContain('  - Ask the user to verify team@acme.example.');
+    expect(shown).toContain(`  - ${VERIFY}`);
     expect(output(console.log)).toMatch(
       /^ {2}Submit to {2}https:\/\/formspree\.io\/f\/xyzabcde$/m,
     );
@@ -460,8 +503,10 @@ describe('forms create', () => {
       problem(403, "The account's plan doesn't include a custom redirect.", {
         next_steps: [
           {
-            step: 'Ask the user to upgrade',
-            detail: 'They can compare plans and upgrade in the dashboard.',
+            step: 'upgrade_plan',
+            title: 'Upgrade the plan',
+            actor: 'user',
+            detail: 'Compare plans and upgrade in the dashboard.',
             url: 'https://formspree.io/plans',
           },
         ],
@@ -480,7 +525,7 @@ describe('forms create', () => {
         kind: 'box',
         title: 'Next steps',
         message: [
-          '- They can compare plans and upgrade in the dashboard.',
+          '- Compare plans and upgrade in the dashboard.',
           '  https://formspree.io/plans',
         ].join('\n'),
         stderr: true,
@@ -488,6 +533,69 @@ describe('forms create', () => {
       },
     ]);
     expect(output(console.log)).not.toContain('https://formspree.io/plans');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('links to the plans from a server that sends the old shape', async () => {
+    login(credentialsFile);
+    answer(
+      403,
+      problem(403, "The account's plan doesn't include a custom redirect.", {
+        // Before formspree-server#2338 this step's name was a sentence.
+        next_steps: [
+          {
+            step: 'Ask the user to upgrade',
+            detail: 'They can compare plans and upgrade in the dashboard.',
+            url: 'https://formspree.io/plans',
+          },
+        ],
+      }),
+    );
+
+    const { framed } = answerPrompts();
+
+    await run(create, { redirect: 'https://acme.example/thanks' });
+
+    expect(framed.map((drawn) => drawn.message)).toEqual([
+      [
+        '- They can compare plans and upgrade in the dashboard.',
+        '  https://formspree.io/plans',
+      ].join('\n'),
+    ]);
+    expect(framed[0]?.stderr).toBe(true);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("leaves an agent's step out of an error", async () => {
+    login(credentialsFile);
+    answer(
+      422,
+      problem(422, 'project_id is not a project id.', {
+        next_steps: [
+          {
+            step: 'list_projects',
+            title: 'List the projects this key can see',
+            actor: 'agent',
+            detail: 'The list has every id you can use.',
+            operation: {
+              id: 'listProjects',
+              method: 'GET',
+              href: 'https://formspree.io/api/v1/projects',
+            },
+          },
+        ],
+      }),
+    );
+
+    const { framed } = answerPrompts();
+
+    await run(create, { project: 'nope' });
+
+    // A step that is an API call is for whoever is calling the API.
+    expect(output(console.error)).toContain('is not a project id. (422)');
+    expect(framed).toEqual([]);
+    expect(output(console.error)).not.toContain('every id you can use');
+    expect(output(console.error)).not.toContain('/api/v1/projects');
     expect(process.exitCode).toBe(1);
   });
 });
@@ -563,7 +671,7 @@ describe('forms create, showing how to use the form', () => {
 
     const shown = output(console.log);
     expect(shown).not.toContain("Set your HTML form's action");
-    expect(shown).toContain('Ask the user to verify team@acme.example.');
+    expect(shown).toContain(VERIFY);
   });
 
   it('prints no next steps when wiring the endpoint was the only one', async () => {
