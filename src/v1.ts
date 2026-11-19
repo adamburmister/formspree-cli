@@ -104,8 +104,14 @@ const detail = (line: string): void => {
  * Prints the steps a response says are left, in a box. `rewrite` maps a
  * step's name to a line that replaces the server's, which is written for
  * API callers, or to null to leave the step out. With `linkedOnly`, steps
- * without a link are left out. With `stderr` the box goes there, for the
- * steps that come with an error.
+ * without a link are left out: those are the agent's steps, which name
+ * routes and tools. With `stderr` the box goes there, for the steps that
+ * come with an error.
+ *
+ * `linkedOnly` reads `url` and not `actor`. The server gives every user's
+ * step a `url` and no agent's step one, so the two tests agree wherever
+ * there is an `actor`, and `url` is the only one of them a body from before
+ * formspree-server#2338 has.
  */
 export const nextSteps = (
   steps: readonly NextStep[] | undefined,

@@ -19,7 +19,7 @@ import {
   post,
 } from '../helpers/v1.ts';
 import chalk from 'chalk';
-import type { Account } from '../../src/types.ts';
+import type { Account, NextStep } from '../../src/types.ts';
 import { CTRL_C, setTTY, unsetTTY, answerPrompts } from '../helpers/clack.ts';
 import { bannerAt } from '../helpers/banner.ts';
 import { command as list } from '../../src/cmds/projects/list.ts';
@@ -57,7 +57,21 @@ const project = {
   },
 };
 
-const createStep = {
+const createStep: NextStep = {
+  step: 'create_form',
+  title: 'Add a form to the project',
+  actor: 'agent',
+  detail: "Send this project's id as project_id to add a form to it.",
+  operation: {
+    id: 'createForm',
+    method: 'POST',
+    href: 'https://formspree.io/api/v1/forms',
+  },
+};
+
+// The same step as the server sent it before formspree-server#2338, which
+// production still does.
+const oldCreateStep: NextStep = {
   step: 'create_form',
   detail: "POST /api/v1/forms with this project's id as project_id.",
   url: 'https://formspree.io/api/v1/forms',
@@ -306,8 +320,11 @@ describe('projects get', () => {
         {
           next_steps: [
             {
-              step: 'List what this key can see',
-              detail: 'GET /api/v1/projects returns every id you can use.',
+              step: 'list_resources',
+              title: 'List what this key can see',
+              actor: 'agent',
+              detail:
+                'GET /api/v1/projects and GET /api/v1/forms return every id you can use.',
             },
           ],
         },
@@ -320,6 +337,33 @@ describe('projects get', () => {
     expect(shown).toContain('Nothing with that id exists');
     expect(shown).toContain('(404)');
     // A step with no link is written for API callers, not CLI users.
+    expect(shown).not.toContain('GET /api/v1/projects');
+    expect(process.exitCode).toBe(3);
+  });
+
+  it('leaves the same step out from a server that sends the old shape', async () => {
+    login(credentialsFile);
+    answer(
+      404,
+      problem(
+        404,
+        'Nothing with that id exists on the accounts this key can use.',
+        {
+          // Before formspree-server#2338 this step's name was a sentence.
+          next_steps: [
+            {
+              step: 'List what this key can see',
+              detail: 'GET /api/v1/projects returns every id you can use.',
+            },
+          ],
+        },
+      ),
+    );
+
+    await run(get, { project: 'proj_nope' });
+
+    const shown = output(console.error);
+    expect(shown).toContain('Nothing with that id exists');
     expect(shown).not.toContain('GET /api/v1/projects');
     expect(process.exitCode).toBe(3);
   });
@@ -365,7 +409,8 @@ describe('projects create', () => {
     expect(shown).toContain(
       'formspree forms create --project proj_2pn3r0jq7zz0t',
     );
-    expect(shown).not.toContain('POST /api/v1/forms');
+    expect(shown).not.toContain('project_id');
+    expect(shown).not.toContain('/api/v1/forms');
     // One note says it was created, over its details, standing on its own
     // without questions. What's left to do is in a box, as it always is.
     expect(shown.match(/Project created/g)).toHaveLength(1);
@@ -391,6 +436,19 @@ describe('projects create', () => {
     expect(framed[0]?.message).toContain(
       'Dashboard  https://formspree.io/projects/3122252403177421850',
     );
+  });
+
+  it('points at forms create from a server that sends the old shape', async () => {
+    login(credentialsFile);
+    answer(200, { project, next_steps: [oldCreateStep] });
+    const { framed } = answerPrompts();
+
+    await run(create, { name: 'Marketing site' });
+
+    expect(framed[1]?.message).toBe(
+      '- Add a form to it: formspree forms create --project proj_2pn3r0jq7zz0t',
+    );
+    expect(output(console.log)).not.toContain('/api/v1/forms');
   });
 
   it("leaves the name to the server when it isn't given", async () => {
@@ -754,7 +812,10 @@ describe('projects delete', () => {
       next_steps: [
         {
           step: 'delete_forms',
-          detail: 'GET /api/v1/forms?project_id=<project_id> lists them.',
+          title: "Delete the project's forms",
+          actor: 'agent',
+          detail:
+            'GET /api/v1/forms?project_id=<project_id> lists them, and DELETE /api/v1/forms/<form_id> deletes each one.',
         },
       ],
     },
